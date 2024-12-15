@@ -73,7 +73,7 @@ class FSMN_VAD(torch.nn.Module):
     def forward(self, audio, cache_0, cache_1, cache_2, cache_3):
         if self.use_pcm_int16:
             audio = self.inv_int16 * audio.float()
-        audio = torch.cat((audio[:, :, :1].float(), audio[:, :, 1:].float() - self.pre_emphasis * audio[:, :, :-1].float()), dim=-1)  # Pre Emphasize
+        audio = torch.cat((audio[:, :, :1], audio[:, :, 1:] - self.pre_emphasis * audio[:, :, :-1]), dim=-1)  # Pre Emphasize
         audio -= torch.mean(audio)  # Remove DC Offset
         real_part, imag_part = self.stft_model(audio, 'constant')
         mel_features = torch.matmul(self.fbank, torch.sqrt(real_part * real_part + imag_part * imag_part)).transpose(1, 2).clamp(min=1e-5).log()
@@ -234,7 +234,10 @@ def vad_to_timestamps(vad_output, frame_duration, fusion_threshold=1.0, min_dura
 
 
 # Start to run FSMN_VAD
-cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float32)
+if "float16" in model_type:
+    cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float16)
+else:
+    cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float32)  # FSMN_VAD model fixed cache shape. Do not edit it.
 cache_1 = cache_0
 cache_2 = cache_0
 cache_3 = cache_0
