@@ -4,7 +4,7 @@ import numpy as np
 import onnxruntime
 from pydub import AudioSegment
 
-onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_Optimized/FSMN_VAD.ort"           # The exported onnx model path.
+onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_Optimized/FSMN_VAD.ort"         # The exported onnx model path.
 test_vad_audio = "./vad_sample.wav"                                             # The test audio path.
 save_timestamps_second = "./timestamps_second.txt"                              # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"                            # The saved path.
@@ -125,7 +125,10 @@ def vad_to_timestamps(vad_output, frame_duration, fusion_threshold=1.0, min_dura
 
 
 # Start to run FSMN_VAD
-cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float32)  # FSMN_VAD model fixed cache shape. Do not edit it.
+if "float16" in model_type:
+    cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float16)
+else:
+    cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float32)  # FSMN_VAD model fixed cache shape. Do not edit it.
 cache_1 = cache_0
 cache_2 = cache_0
 cache_3 = cache_0
