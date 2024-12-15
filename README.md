@@ -2,7 +2,7 @@
 Utilizes ONNX Runtime for speech activity detection.
 1. Now support:
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
-2. It is recommended to use FSMN with the denoised model.
+2. It is recommended to use FSMN with denoised model.
   
 
 
