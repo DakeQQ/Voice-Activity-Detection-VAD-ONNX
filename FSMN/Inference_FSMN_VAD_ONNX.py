@@ -12,7 +12,7 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 ORT_Accelerate_Providers = []           # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                         # else keep empty.
 SAMPLE_RATE = 16000                     # The FSMN_VAD parameter, do not edit the value.
-ONE_MINUS_SPEECH_THRESHOLD = 0.15       # The judge factor for the VAD model edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech. When using denoised audio, this value could be approximately 0.01
+ONE_MINUS_SPEECH_THRESHOLD = 0.15       # The judge factor for the VAD model edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech. When using denoised audio, this value could be approximately 0.02
 SNR_THRESHOLD = 10.0                    # The judge factor for VAD model. Unit: dB.
 BACKGROUND_NOISE_dB_INIT = 20.0         # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
 FUSION_THRESHOLD = 1.5                  # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
