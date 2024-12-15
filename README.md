@@ -21,4 +21,5 @@ Utilizes ONNX Runtime for speech activity detection.
 # 性能 Performance
 | OS | Device | Backend | Model | Real-Time Factor<br>( Chunk_Size: 1600 or 100ms ) |
 |:-------:|:-------:|:-------:|:-------:|:-------:|
-| Ubuntu-24.04 | Desktop | CPU<br>i5-7300HQ | FSMN<br>f32 | 0.0047 |
+| Ubuntu-24.04 | Laptop | CPU<br>i5-7300HQ | FSMN<br>f32 | 0.0047 |
+| Ubuntu-24.04 | Desktop | CPU<br>i3-12300 | FSMN<br>f32 | 0.002 |
