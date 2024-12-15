@@ -95,7 +95,7 @@ class FSMN_VAD(torch.nn.Module):
 
 print('Export start ...')
 with torch.inference_mode():
-    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, n_mels=N_MELS, hop_len=HOP_LENGTH, max_frames=1, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
+    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, n_mels=N_MELS, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
     fsmn_vad = FSMN_VAD(AutoModel.build_model(model=model_path, device='cpu')[0].encoder.eval(), custom_stft, NFFT,
                         N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, LFR_M, LFR_N, LFR_LENGTH, STFT_SIGNAL_LENGTH, SPEECH_2_NOISE_RATIO, INPUT_AUDIO_LENGTH, HOP_LENGTH, USE_PCM_INT16)
     audio = torch.ones((1, 1, INPUT_AUDIO_LENGTH), dtype=torch.int16 if USE_PCM_INT16 else torch.float32)
