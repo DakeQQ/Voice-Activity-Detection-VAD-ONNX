@@ -20,6 +20,19 @@ MIN_SPEECH_DURATION = 0.5               # A judgment factor used to filter the v
 ACTIVATE_SCORE = 0.5                    # A judgment factor used to judge the state is active or not.
 
 
+# ONNX Runtime settings
+session_opts = onnxruntime.SessionOptions()
+session_opts.log_severity_level = 3         # error level, it an adjustable value.
+session_opts.inter_op_num_threads = 0       # Run different nodes with num_threads. Set 0 for auto.
+session_opts.intra_op_num_threads = 0       # Under the node, execute the operators with num_threads. Set 0 for auto.
+session_opts.enable_cpu_mem_arena = True    # True for execute speed; False for less memory usage.
+session_opts.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+session_opts.add_session_config_entry("session.intra_op.allow_spinning", "1")
+session_opts.add_session_config_entry("session.inter_op.allow_spinning", "1")
+session_opts.add_session_config_entry("session.set_denormal_as_zero", "1")
+
+
 ort_session_A = onnxruntime.InferenceSession(onnx_model_A, sess_options=session_opts, providers=ORT_Accelerate_Providers)
 print(f"\nUsable Providers: {ort_session_A.get_providers()}")
 model_type = ort_session_A._inputs_meta[0].type
