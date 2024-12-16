@@ -186,8 +186,11 @@ else:
     INPUT_AUDIO_LENGTH = shape_value_in
 stride_step = INPUT_AUDIO_LENGTH
 if audio_len > INPUT_AUDIO_LENGTH:
-    final_slice = audio[:, :, audio_len // stride_step * stride_step:]
-    white_noise = (np.sqrt(np.mean(final_slice * final_slice)) * np.random.normal(loc=0.0, scale=1.0, size=(1, 1, stride_step - final_slice.shape[-1]))).astype(audio.dtype)
+    num_windows = int(np.ceil((audio_len - INPUT_AUDIO_LENGTH) / stride_step)) + 1
+    total_length_needed = (num_windows - 1) * stride_step + INPUT_AUDIO_LENGTH
+    pad_amount = total_length_needed - audio_len
+    final_slice = audio[:, :, -pad_amount:]
+    white_noise = (np.sqrt(np.mean(final_slice * final_slice)) * np.random.normal(loc=0.0, scale=1.0, size=(1, 1, pad_amount))).astype(audio.dtype)
     audio = np.concatenate((audio, white_noise), axis=-1)
 elif audio_len < INPUT_AUDIO_LENGTH:
     white_noise = (np.sqrt(np.mean(audio * audio)) * np.random.normal(loc=0.0, scale=1.0, size=(1, 1, INPUT_AUDIO_LENGTH - audio_len))).astype(audio.dtype)
@@ -260,11 +263,11 @@ SNR_THRESHOLD = SNR_THRESHOLD * 0.5
 saved = []
 print("\nRunning the FSMN_VAD by ONNX Runtime.")
 start_time = time.time()
-while slice_start + stride_step <= aligned_len:
+while slice_start + INPUT_AUDIO_LENGTH <= aligned_len:
     score, cache_0, cache_1, cache_2, cache_3, noisy_dB = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5],
         {
-            in_name_A0: audio[:, :, slice_start: slice_start + stride_step],
+            in_name_A0: audio[:, :, slice_start: slice_start + INPUT_AUDIO_LENGTH],
             in_name_A1: cache_0,
             in_name_A2: cache_1,
             in_name_A3: cache_2,
