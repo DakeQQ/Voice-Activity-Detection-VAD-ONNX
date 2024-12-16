@@ -22,7 +22,7 @@ ACTIVATE_SCORE = 0.5                    # A judgment factor used to judge the st
 
 ort_session_A = onnxruntime.InferenceSession(onnx_model_A, sess_options=session_opts, providers=ORT_Accelerate_Providers)
 print(f"\nUsable Providers: {ort_session_A.get_providers()}")
-model_type = ort_session_A._inputs_meta[4].type
+model_type = ort_session_A._inputs_meta[0].type
 in_name_A = ort_session_A.get_inputs()
 out_name_A = ort_session_A.get_outputs()
 in_name_A0 = in_name_A[0].name
