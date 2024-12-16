@@ -214,7 +214,7 @@ class FSMN(nn.Module):
         cache_3: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         x, cache_0, cache_1, cache_2, cache_3 = self.fsmn(self.relu(self.in_linear2(self.in_linear1(x))), cache_0, cache_1, cache_2, cache_3)
-        return self.softmax(self.out_linear2(self.out_linear1(x)))[:, :, 0], cache_0, cache_1, cache_2, cache_3
+        return self.softmax(self.out_linear2(self.out_linear1(x))).squeeze()[:, 0], cache_0, cache_1, cache_2, cache_3
 
 
 @tables.register("encoder_classes", "FSMNExport")
