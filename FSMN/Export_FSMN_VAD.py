@@ -273,11 +273,10 @@ while slice_start + stride_step <= aligned_len:
             in_name_A6: noise_average_dB
         })
     if score > ACTIVATE_SCORE:
-        speaking = True
+        saved.append(True)
     else:
-        speaking = False
-        noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
-    saved.append(speaking)
+        saved.append(False)
+    noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
     print(f"Complete: {slice_start * inv_audio_len:.2f}%")
     slice_start += stride_step
 end_time = time.time()
