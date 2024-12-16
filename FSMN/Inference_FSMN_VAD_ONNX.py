@@ -149,7 +149,7 @@ while slice_start + stride_step <= aligned_len:
     score, cache_0, cache_1, cache_2, cache_3, noisy_dB = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5],
         {
-            in_name_A0: audio[:, :, slice_start: slice_start + INPUT_AUDIO_LENGTH],
+            in_name_A0: audio[:, :, slice_start: slice_start + stride_step],
             in_name_A1: cache_0,
             in_name_A2: cache_1,
             in_name_A3: cache_2,
