@@ -112,7 +112,7 @@ with torch.inference_mode():
         do_constant_folding=True,
         dynamic_axes={
             'audio': {2: 'audio_len'},
-            'score': {2: 'audio_len'},
+            'score': {1: 'audio_len'},
             'power_db': {0: 'audio_len'}
         } if DYNAMIC_AXES else None,
         opset_version=17
