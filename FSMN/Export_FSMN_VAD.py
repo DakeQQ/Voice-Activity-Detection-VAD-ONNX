@@ -10,7 +10,7 @@ from pydub import AudioSegment
 
 from STFT_Process import STFT_Process  # The custom STFT/ISTFT can be exported in ONNX format.
 
-model_path = "/home/DakeQQ/Downloads/speech_fsmn_vad_zh-cn-16k-common-pytorch"                                                            # The ZipEnhancer download path.
+model_path = "/home/DakeQQ/Downloads/speech_fsmn_vad_zh-cn-16k-common-pytorch"                                                            # The FSMN_VAD download path.
 onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_ONNX/FSMN_VAD.onnx"                                                                       # The exported onnx model path.
 python_fsmn_vad_path = '/home/DakeQQ/anaconda3/envs/python_312/lib/python3.12/site-packages/funasr/models/fsmn_vad_streaming/encoder.py'  # The FSMN_VAD python script path.
 modified_path = './modeling_modified/'
