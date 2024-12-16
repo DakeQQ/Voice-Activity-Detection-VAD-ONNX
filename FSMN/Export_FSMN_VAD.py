@@ -55,7 +55,7 @@ from funasr import AutoModel
 
 
 class FSMN_VAD(torch.nn.Module):
-    def __init__(self, fsmn_vad, stft_model, nfft, n_mels, sample_rate, pre_emphasis, lfr_m, lfr_n, lfr_len, ref_len, speech_2_noise_ratio, input_audio_len, hpp_len, use_pcm_int16):
+    def __init__(self, fsmn_vad, stft_model, nfft, n_mels, sample_rate, pre_emphasis, lfr_m, lfr_n, lfr_len, ref_len, speech_2_noise_ratio, input_audio_len, hop_len, use_pcm_int16):
         super(FSMN_VAD, self).__init__()
         self.fsmn_vad = fsmn_vad
         self.stft_model = stft_model
@@ -68,7 +68,7 @@ class FSMN_VAD(torch.nn.Module):
         self.T_lfr = lfr_len
         indices = torch.arange(0, self.T_lfr * lfr_n, lfr_n, dtype=torch.int32).unsqueeze(1) + torch.arange(lfr_m, dtype=torch.int32)
         self.indices_mel = indices.clamp(max=ref_len + self.lfr_m_factor - 1)  # Ensure no out-of-bounds access
-        self.indices_audio = torch.arange(nfft, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft + 1, hpp_len, dtype=torch.int32).unsqueeze(-1)
+        self.indices_audio = torch.arange(nfft, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft + 1, hop_len, dtype=torch.int32).unsqueeze(-1)
         self.inv_reference_air_pressure_square = 2500000000.0 / input_audio_len
 
     def forward(self, audio, cache_0, cache_1, cache_2, cache_3, one_minus_speech_threshold, noise_average_dB):
