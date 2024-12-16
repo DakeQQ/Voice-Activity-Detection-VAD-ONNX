@@ -70,7 +70,7 @@ class FSMN_VAD(torch.nn.Module):
         self.indices_audio = torch.arange(nfft, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft + 1, hpp_len, dtype=torch.int32).unsqueeze(-1)
         self.inv_reference_air_pressure_square = 2500000000.0 / input_audio_len
 
-    def forward(self, audio, cache_0, cache_1, cache_2, cache_3):
+    def forward(self, audio, cache_0, cache_1, cache_2, cache_3, one_minus_speech_threshold, noise_average_dB):
         if self.use_pcm_int16:
             audio = self.inv_int16 * audio.float()
         audio = torch.cat((audio[:, :, :1], audio[:, :, 1:] - self.pre_emphasis * audio[:, :, :-1]), dim=-1)  # Pre Emphasize
@@ -90,12 +90,17 @@ class FSMN_VAD(torch.nn.Module):
         audio = audio.squeeze()[self.indices_audio]
         power_db = 10.0 * torch.log10(torch.sum(audio * audio, dim=-1) * self.inv_reference_air_pressure_square + 0.00002)
         padding = power_db[-1:].expand((score.shape[-1] - power_db.shape[-1]))
-        return score, cache_0, cache_1, cache_2, cache_3, torch.cat((power_db, padding), dim=-1)
+        power_db = torch.cat((power_db, padding), dim=-1)
+        condition = (score <= one_minus_speech_threshold)
+        speaking_db = power_db[torch.where((condition & (power_db >= noise_average_dB)))]
+        noisy_dB = power_db[torch.where(~condition)].mean()
+        score = speaking_db.shape[-1] / score.shape[-1]
+        return score, cache_0, cache_1, cache_2, cache_3, noisy_dB
 
 
 print('Export start ...')
 with torch.inference_mode():
-    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, n_mels=N_MELS, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
+    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, n_mels=N_MELS, hop_len=HOP_LENGTH, max_frames=1, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
     fsmn_vad = FSMN_VAD(AutoModel.build_model(model=model_path, device='cpu')[0].encoder.eval(), custom_stft, NFFT,
                         N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, LFR_M, LFR_N, LFR_LENGTH, STFT_SIGNAL_LENGTH, SPEECH_2_NOISE_RATIO, INPUT_AUDIO_LENGTH, HOP_LENGTH, USE_PCM_INT16)
     audio = torch.ones((1, 1, INPUT_AUDIO_LENGTH), dtype=torch.int16 if USE_PCM_INT16 else torch.float32)
@@ -103,17 +108,17 @@ with torch.inference_mode():
     cache_1 = cache_0
     cache_2 = cache_0
     cache_3 = cache_0
+    one_minus_speech_threshold = torch.ones(1, dtype=torch.float32)
+    noise_average_dB = torch.ones(1, dtype=torch.float32)
     torch.onnx.export(
         fsmn_vad,
-        (audio, cache_0, cache_1, cache_2, cache_3),
+        (audio, cache_0, cache_1, cache_2, cache_3, one_minus_speech_threshold, noise_average_dB),
         onnx_model_A,
-        input_names=['audio', 'cache_0', 'cache_1', 'cache_2', 'cache_3'],
-        output_names=['score', 'cache_0', 'cache_1', 'cache_2', 'cache_3', 'power_db'],
+        input_names=['audio', 'cache_0', 'cache_1', 'cache_2', 'cache_3', 'one_minus_speech_threshold', 'noise_average_dB'],
+        output_names=['score', 'cache_0', 'cache_1', 'cache_2', 'cache_3', 'noisy_dB'],
         do_constant_folding=True,
         dynamic_axes={
             'audio': {2: 'audio_len'},
-            'score': {1: 'audio_len'},
-            'power_db': {0: 'audio_len'}
         } if DYNAMIC_AXES else None,
         opset_version=17
     )
@@ -124,6 +129,8 @@ with torch.inference_mode():
     del cache_3
     del audio
     del custom_stft
+    del one_minus_speech_threshold
+    del noise_average_dB
     gc.collect()
 print('\nExport done!\n\nStart to run FSMN_VAD by ONNX Runtime.\n\nNow, loading the model...')
 
@@ -151,6 +158,8 @@ in_name_A1 = in_name_A[1].name
 in_name_A2 = in_name_A[2].name
 in_name_A3 = in_name_A[3].name
 in_name_A4 = in_name_A[4].name
+in_name_A5 = in_name_A[5].name
+in_name_A6 = in_name_A[6].name
 out_name_A0 = out_name_A[0].name
 out_name_A1 = out_name_A[1].name
 out_name_A2 = out_name_A[2].name
@@ -236,49 +245,44 @@ def vad_to_timestamps(vad_output, frame_duration, fusion_threshold=1.0, min_dura
 # Start to run FSMN_VAD
 if "float16" in model_type:
     cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float16)
+    noise_average_dB = np.array([BACKGROUND_NOISE_dB_INIT + SNR_THRESHOLD], dtype=np.float16)
+    one_minus_speech_threshold = np.array([ONE_MINUS_SPEECH_THRESHOLD], dtype=np.float16)
 else:
     cache_0 = np.zeros((1, 128, 19, 1), dtype=np.float32)  # FSMN_VAD model fixed cache shape. Do not edit it.
+    noise_average_dB = np.array([BACKGROUND_NOISE_dB_INIT + SNR_THRESHOLD], dtype=np.float32)
+    one_minus_speech_threshold = np.array([ONE_MINUS_SPEECH_THRESHOLD], dtype=np.float32)
 cache_1 = cache_0
 cache_2 = cache_0
 cache_3 = cache_0
 slice_start = 0
-count = 1
-noise_average_dB = BACKGROUND_NOISE_dB_INIT
 saved = []
 print("\nRunning the FSMN_VAD by ONNX Runtime.")
 start_time = time.time()
 while slice_start + stride_step < aligned_len:
-    score, cache_0, cache_1, cache_2, cache_3, power_db = ort_session_A.run(
+    score, cache_0, cache_1, cache_2, cache_3, noisy_dB = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5],
         {
             in_name_A0: audio[:, :, slice_start: slice_start + INPUT_AUDIO_LENGTH],
             in_name_A1: cache_0,
             in_name_A2: cache_1,
             in_name_A3: cache_2,
-            in_name_A4: cache_3
+            in_name_A4: cache_3,
+            in_name_A5: one_minus_speech_threshold,
+            in_name_A6: noise_average_dB
         })
-    frame_state = 0
-    for i in range(score.shape[-1]):
-        if score[:, i] <= ONE_MINUS_SPEECH_THRESHOLD:
-            if count * (power_db[i] - SNR_THRESHOLD) >= noise_average_dB:
-                frame_state += 1
-        else:
-            noise_average_dB += power_db[i]
-            count += 1
-            if count > 9999:  # Take only the recent average noise dB into account.
-                noise_average_dB *= 0.5
-                count = 5000
-    if (frame_state + frame_state) < score.shape[-1]:  # If active frame less than 1/2, judge to silence.
-        speaking = False
-    else:
+    if score > 0.5:  # If active frame more than 1/2, judge to speaking.
         speaking = True
+    else:
+        speaking = False
+        noise_average_dB = 0.1 * noisy_dB + 0.9 * (noise_average_dB - SNR_THRESHOLD) + SNR_THRESHOLD
+
     saved.append(speaking)
     print(f"Complete: {slice_start * inv_audio_len:.2f}%")
     slice_start += stride_step
+end_time = time.time()
 
 # Generate timestamps.
 timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
-end_time = time.time()
 print(f"Complete: 100.00%\n\nTimestamps in Second:")
 
 # Save the timestamps.
