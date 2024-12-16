@@ -39,6 +39,7 @@ SNR_THRESHOLD = 10.0                                        # The judge factor f
 BACKGROUND_NOISE_dB_INIT = 30.0                             # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
 FUSION_THRESHOLD = 1.5                                      # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
 MIN_SPEECH_DURATION = 0.5                                   # A judgment factor used to filter the vad results. Unit: second.
+ACTIVATE_SCORE = 0.5                                        # A judgment factor used to judge the state is active or not.
 
 
 STFT_SIGNAL_LENGTH = INPUT_AUDIO_LENGTH // HOP_LENGTH + 1   # Reference audio length after STFT processed
@@ -271,7 +272,7 @@ while slice_start + stride_step < aligned_len:
             in_name_A5: one_minus_speech_threshold,
             in_name_A6: noise_average_dB
         })
-    if score > 0.5:  # If active frame more than 1/2, judge to speaking.
+    if score > ACTIVATE_SCORE:
         speaking = True
     else:
         speaking = False
