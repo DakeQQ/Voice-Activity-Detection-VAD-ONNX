@@ -144,15 +144,16 @@ cache_1 = cache_0
 cache_2 = cache_0
 cache_3 = cache_0
 slice_start = 0
+slice_end = INPUT_AUDIO_LENGTH
 SNR_THRESHOLD = SNR_THRESHOLD * 0.5
 saved = []
 print("\nRunning the FSMN_VAD by ONNX Runtime.")
 start_time = time.time()
-while slice_start + INPUT_AUDIO_LENGTH <= aligned_len:
+while slice_end <= aligned_len:
     score, cache_0, cache_1, cache_2, cache_3, noisy_dB = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5],
         {
-            in_name_A0: audio[:, :, slice_start: slice_start + INPUT_AUDIO_LENGTH],
+            in_name_A0: audio[:, :, slice_start: slice_end],
             in_name_A1: cache_0,
             in_name_A2: cache_1,
             in_name_A3: cache_2,
@@ -167,6 +168,7 @@ while slice_start + INPUT_AUDIO_LENGTH <= aligned_len:
     noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
     print(f"Complete: {slice_start * inv_audio_len:.2f}%")
     slice_start += stride_step
+    slice_end = slice_start + INPUT_AUDIO_LENGTH
 
 # Generate timestamps.
 end_time = time.time()
