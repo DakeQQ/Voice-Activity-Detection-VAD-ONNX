@@ -26,23 +26,23 @@ USE_PCM_INT16 = False                                       # Enable it, if the 
 INPUT_AUDIO_LENGTH = 1600                                   # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 400 and less than 8000. Smaller values yield fine timestamps.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 MAX_THREADS = 4                                             # Number of parallel threads for test audio denoising.
-N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it, the FSMN_VAD model accept the 80 only.
+N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT = 400                                                  # Number of FFT components for the STFT process, edit it carefully.
-HOP_LENGTH = 160                                            # Number of samples between successive frames in the STFT, edit it carefully.
+HOP_LENGTH = 180                                            # Number of samples between successive frames in the STFT, edit it carefully.
 SAMPLE_RATE = 16000                                         # The FSMN_VAD parameter, do not edit the value.
 LFR_M = 5                                                   # The FSMN_VAD parameter, do not edit the value.
 LFR_N = 1                                                   # The FSMN_VAD parameter, do not edit the value.
-PRE_EMPHASIZE = 0.95                                        # For audio preprocessing.
+PRE_EMPHASIZE = 0.97                                        # For audio preprocessing.
 SPEECH_2_NOISE_RATIO = 1.0                                  # The judge factor for VAD model, edit it carefully.
-ONE_MINUS_SPEECH_THRESHOLD = 0.15                           # The judge factor for the VAD model, edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech. When using denoised audio, this value could be approximately 0.02
+ONE_MINUS_SPEECH_THRESHOLD = 1.0                            # The judge factor for the VAD model, edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech.
 SNR_THRESHOLD = 10.0                                        # The judge factor for VAD model. Unit: dB.
 BACKGROUND_NOISE_dB_INIT = 30.0                             # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
-FUSION_THRESHOLD = 1.5                                      # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
+FUSION_THRESHOLD = 1.0                                      # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
 MIN_SPEECH_DURATION = 0.5                                   # A judgment factor used to filter the vad results. Unit: second.
 ACTIVATE_SCORE = 0.5                                        # A judgment factor used to judge the state is active or not.
 
 
-STFT_SIGNAL_LENGTH = INPUT_AUDIO_LENGTH // HOP_LENGTH + 1   # Reference audio length after STFT processed
+STFT_SIGNAL_LENGTH = INPUT_AUDIO_LENGTH // HOP_LENGTH + 1   # The length after STFT processed
 LFR_LENGTH = (STFT_SIGNAL_LENGTH + LFR_N - 1) // LFR_N
 if NFFT > INPUT_AUDIO_LENGTH:
     NFFT = INPUT_AUDIO_LENGTH
@@ -55,7 +55,7 @@ from funasr import AutoModel
 
 
 class FSMN_VAD(torch.nn.Module):
-    def __init__(self, fsmn_vad, stft_model, nfft, n_mels, sample_rate, pre_emphasis, lfr_m, lfr_n, lfr_len, ref_len, speech_2_noise_ratio, input_audio_len, hop_len, use_pcm_int16):
+    def __init__(self, fsmn_vad, stft_model, nfft, n_mels, sample_rate, pre_emphasis, lfr_m, lfr_n, lfr_len, ref_len, speech_2_noise_ratio, input_audio_len, hop_len, cmvn_means, cmvn_vars, use_pcm_int16):
         super(FSMN_VAD, self).__init__()
         self.fsmn_vad = fsmn_vad
         self.stft_model = stft_model
@@ -63,9 +63,11 @@ class FSMN_VAD(torch.nn.Module):
         self.speech_2_noise_ratio = speech_2_noise_ratio
         self.pre_emphasis = torch.tensor(pre_emphasis, dtype=torch.float32)
         self.inv_int16 = 1.0 / 32768.0
-        self.fbank = (torchaudio.functional.melscale_fbanks(nfft // 2 + 1, 20, 20000, n_mels, sample_rate, None,'htk')).transpose(0, 1).unsqueeze(0)
+        self.fbank = (torchaudio.functional.melscale_fbanks(nfft // 2 + 1, 20, 8000, n_mels, sample_rate, None,'htk')).transpose(0, 1).unsqueeze(0)
         self.lfr_m_factor = (lfr_m - 1) // 2
         self.T_lfr = lfr_len
+        self.cmvn_means = cmvn_means
+        self.cmvn_vars = cmvn_vars
         indices = torch.arange(0, self.T_lfr * lfr_n, lfr_n, dtype=torch.int32).unsqueeze(1) + torch.arange(lfr_m, dtype=torch.int32)
         self.indices_mel = indices.clamp(max=ref_len + self.lfr_m_factor - 1)  # Ensure no out-of-bounds access
         self.indices_audio = torch.arange(nfft, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft + 1, hop_len, dtype=torch.int32).unsqueeze(-1)
@@ -77,11 +79,11 @@ class FSMN_VAD(torch.nn.Module):
         audio = torch.cat((audio[:, :, :1], audio[:, :, 1:] - self.pre_emphasis * audio[:, :, :-1]), dim=-1)  # Pre Emphasize
         audio -= torch.mean(audio)  # Remove DC Offset
         real_part, imag_part = self.stft_model(audio, 'constant')
-        mel_features = torch.matmul(self.fbank, torch.sqrt(real_part * real_part + imag_part * imag_part)).transpose(1, 2).clamp(min=1e-5).log()
+        mel_features = torch.matmul(self.fbank, real_part * real_part + imag_part * imag_part).transpose(1, 2).clamp(min=1e-5).log()
         left_padding = mel_features[:, [0], :].repeat(1, self.lfr_m_factor, 1)
         padded_inputs = torch.cat((left_padding, mel_features), dim=1)
         mel_features = padded_inputs[:, self.indices_mel].reshape(1, self.T_lfr, -1)  # Merge time and feature dims
-        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad.forward(mel_features, cache_0, cache_1, cache_2, cache_3)
+        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad.forward((mel_features + self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
         if self.speech_2_noise_ratio > 1.0:
             score += torch.pow(score, self.speech_2_noise_ratio)
         elif self.speech_2_noise_ratio < 1.0:
@@ -102,8 +104,14 @@ class FSMN_VAD(torch.nn.Module):
 print('Export start ...')
 with torch.inference_mode():
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, n_mels=N_MELS, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
-    fsmn_vad = FSMN_VAD(AutoModel.build_model(model=model_path, device='cpu')[0].encoder.eval(), custom_stft, NFFT,
-                        N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, LFR_M, LFR_N, LFR_LENGTH, STFT_SIGNAL_LENGTH, SPEECH_2_NOISE_RATIO, INPUT_AUDIO_LENGTH, HOP_LENGTH, USE_PCM_INT16)
+    fsmn_vad = AutoModel(
+        model=model_path,
+        disable_update=True,
+        device="cpu"
+    )
+    CMVN_MEANS = fsmn_vad.kwargs['frontend'].cmvn[0].repeat(1, 1, 1)
+    CMVN_VARS = fsmn_vad.kwargs['frontend'].cmvn[1].repeat(1, 1, 1)
+    fsmn_vad = FSMN_VAD(fsmn_vad.model.encoder.eval(), custom_stft, NFFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, LFR_M, LFR_N, LFR_LENGTH, STFT_SIGNAL_LENGTH, SPEECH_2_NOISE_RATIO, INPUT_AUDIO_LENGTH, HOP_LENGTH, CMVN_MEANS, CMVN_VARS, USE_PCM_INT16)
     audio = torch.ones((1, 1, INPUT_AUDIO_LENGTH), dtype=torch.int16 if USE_PCM_INT16 else torch.float32)
     cache_0 = torch.zeros((1, 128, 19, 1), dtype=torch.float32)  # FSMN_VAD model fixed cache shape. Do not edit it.
     cache_1 = cache_0
@@ -132,6 +140,8 @@ with torch.inference_mode():
     del custom_stft
     del one_minus_speech_threshold
     del noise_average_dB
+    del CMVN_MEANS
+    del CMVN_VARS
     gc.collect()
 print('\nExport done!\n\nStart to run FSMN_VAD by ONNX Runtime.\n\nNow, loading the model...')
 
