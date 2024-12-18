@@ -71,7 +71,7 @@ class FSMN_VAD(torch.nn.Module):
         indices = torch.arange(0, self.T_lfr * lfr_n, lfr_n, dtype=torch.int32).unsqueeze(1) + torch.arange(lfr_m, dtype=torch.int32)
         self.indices_mel = indices.clamp(max=ref_len + self.lfr_m_factor - 1)  # Ensure no out-of-bounds access
         self.indices_audio = torch.arange(nfft, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft + 1, hop_len, dtype=torch.int32).unsqueeze(-1)
-        self.inv_reference_air_factor = torch.tensor(1.0 / 2e-5, dtype=torch.float32) if DYNAMIC_AXES else torch.tensor(1.0 / (torch.sqrt(input_audio_len) * 2e-5), dtype=torch.float32)
+        self.inv_reference_air_factor = torch.tensor(1.0 / 2e-5, dtype=torch.float32) if DYNAMIC_AXES else torch.tensor(1.0 / (torch.sqrt(torch.tensor(input_audio_len)) * 2e-5), dtype=torch.float32)
         # 2e-5 if reference air_pressure value
 
     def forward(self, audio, cache_0, cache_1, cache_2, cache_3, one_minus_speech_threshold, noise_average_dB):
