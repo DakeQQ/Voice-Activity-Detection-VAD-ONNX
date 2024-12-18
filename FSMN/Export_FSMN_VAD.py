@@ -23,11 +23,11 @@ ORT_Accelerate_Providers = []                               # If you have accele
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # The default dynamic_axes is the input audio length. Note that some providers only support static axes.
 USE_PCM_INT16 = False                                       # Enable it, if the audio input is PCM wav data with dtype int16 (short).
-INPUT_AUDIO_LENGTH = 1600                                   # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 400 and less than 8000. Smaller values yield fine timestamps.
+INPUT_AUDIO_LENGTH = 1536                                   # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 8192. Smaller values yield fine timestamps.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
-NFFT = 400                                                  # Number of FFT components for the STFT process, edit it carefully.
-HOP_LENGTH = 180                                            # Number of samples between successive frames in the STFT, edit it carefully.
+NFFT = 512                                                  # Number of FFT components for the STFT process, edit it carefully.
+HOP_LENGTH = 150                                            # Number of samples between successive frames in the STFT, edit it carefully.
 SAMPLE_RATE = 16000                                         # The FSMN_VAD parameter, do not edit the value.
 LFR_M = 5                                                   # The FSMN_VAD parameter, do not edit the value.
 LFR_N = 1                                                   # The FSMN_VAD parameter, do not edit the value.
@@ -192,7 +192,7 @@ if "int16" not in model_type:
 audio = audio.reshape(1, 1, -1)
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
 if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH = min(1600, audio_len)  # Default is 100ms. You can adjust it.
+    INPUT_AUDIO_LENGTH = min(1536, audio_len)  # Default is 96ms. You can adjust it.
 else:
     INPUT_AUDIO_LENGTH = shape_value_in
 stride_step = INPUT_AUDIO_LENGTH
