@@ -66,7 +66,7 @@ if "int16" not in model_type:
 audio = audio.reshape(1, 1, -1)
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
 if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH = min(4000, audio_len)  # Default is 250ms. You can adjust it.
+    INPUT_AUDIO_LENGTH = min(1536, audio_len)  # Default is 96ms. You can adjust it.
 else:
     INPUT_AUDIO_LENGTH = shape_value_in
 stride_step = INPUT_AUDIO_LENGTH
