@@ -12,12 +12,13 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 ORT_Accelerate_Providers = []           # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                         # else keep empty.
 SAMPLE_RATE = 16000                     # The FSMN_VAD parameter, do not edit the value.
-ONE_MINUS_SPEECH_THRESHOLD = 1.0        # The judge factor for the VAD model edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech.
+ONE_MINUS_SPEECH_THRESHOLD = 0.9        # The judge factor for the VAD model edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech.
 SNR_THRESHOLD = 10.0                    # The judge factor for VAD model. Unit: dB.
 BACKGROUND_NOISE_dB_INIT = 30.0         # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
 FUSION_THRESHOLD = 1.0                  # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
 MIN_SPEECH_DURATION = 0.5               # A judgment factor used to filter the vad results. Unit: second.
-ACTIVATE_SCORE = 0.5                    # A judgment factor used to judge the state is active or not.
+SPEAKING_SCORE = 0.6                    # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
+SILENCE_SCORE = 0.6                     # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
 
 
 # ONNX Runtime settings
@@ -99,15 +100,15 @@ def vad_to_timestamps(vad_output, frame_duration, fusion_threshold=1.0, min_dura
     start = None
 
     # Extract raw timestamps
-    for i, is_speaking in enumerate(vad_output):
-        if is_speaking:
-            if start is None:  # Start of a new speaking segment
-                start = i * frame_duration
-        else:
+    for i, silence in enumerate(vad_output):
+        if silence:
             if start is not None:  # End of the current speaking segment
                 end = i * frame_duration + frame_duration
                 timestamps.append((start, end))
                 start = None
+        else:
+            if start is None:  # Start of a new speaking segment
+                start = i * frame_duration
 
     # Handle the case where speech continues until the end
     if start is not None:
@@ -146,6 +147,7 @@ cache_3 = cache_0
 slice_start = 0
 slice_end = INPUT_AUDIO_LENGTH
 SNR_THRESHOLD = SNR_THRESHOLD * 0.5
+silence = True
 saved = []
 print("\nRunning the FSMN_VAD by ONNX Runtime.")
 start_time = time.time()
@@ -161,10 +163,13 @@ while slice_end <= aligned_len:
             in_name_A5: one_minus_speech_threshold,
             in_name_A6: noise_average_dB
         })
-    if score > ACTIVATE_SCORE:
-        saved.append(True)
+    if silence:
+        if score >= SPEAKING_SCORE:
+            silence = False
     else:
-        saved.append(False)
+        if score <= SILENCE_SCORE:
+            silence = True
+    saved.append(silence)
     noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
     print(f"Complete: {slice_start * inv_audio_len:.2f}%")
     slice_start += stride_step
