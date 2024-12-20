@@ -1,5 +1,3 @@
-Here is the refined `ReadMe.md` for **Voice-Activity-Detection-VAD-ONNX** in English and Chinese:  
-
 ---
 
 ## Voice-Activity-Detection-VAD-ONNX  
