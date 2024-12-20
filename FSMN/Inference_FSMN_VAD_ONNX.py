@@ -17,8 +17,8 @@ SNR_THRESHOLD = 10.0                    # The judge factor for VAD model. Unit: 
 BACKGROUND_NOISE_dB_INIT = 40.0         # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
 FUSION_THRESHOLD = 1.5                  # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
 MIN_SPEECH_DURATION = 0.5               # A judgment factor used to filter the vad results. Unit: second.
-SPEAKING_SCORE = 0.6                    # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
-SILENCE_SCORE = 0.6                     # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
+SPEAKING_SCORE = 0.5                    # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
+SILENCE_SCORE = 0.5                     # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
 
 
 # ONNX Runtime settings
@@ -175,14 +175,14 @@ while slice_end <= aligned_len:
             silence = True
     saved.append(silence)
     noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
-    print(f"Complete: {slice_start * inv_audio_len:.2f}%")
+    print(f"Complete: {slice_start * inv_audio_len:.3f}%")
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
 
 # Generate timestamps.
 end_time = time.time()
 timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
-print(f"Complete: 100.00%")
+print(f"Complete: 100.000%")
 
 # Save the timestamps.
 with open(save_timestamps_second, "w", encoding='UTF-8') as file:
