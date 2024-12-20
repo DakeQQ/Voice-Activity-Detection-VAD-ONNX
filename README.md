@@ -1,7 +1,7 @@
 ---
 
 ## Voice-Activity-Detection-VAD-ONNX  
-Speech activity detection powered by ONNX Runtime for high-performance, real-time applications.  
+Speech activity detection powered by ONNX Runtime for high-performance applications.  
 
 ### Features  
 1. **Supported Model**:  
@@ -30,7 +30,7 @@ Speech activity detection powered by ONNX Runtime for high-performance, real-tim
 ---
 
 ## Voice-Activity-Detection-VAD-ONNX  
-通过 ONNX Runtime 实现高性能、实时的语音活动检测。  
+通过 ONNX Runtime 实现高性能的语音活动检测。  
 
 ### 功能  
 1. **支持的模型**：  
