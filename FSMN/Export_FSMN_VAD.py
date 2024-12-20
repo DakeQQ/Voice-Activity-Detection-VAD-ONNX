@@ -307,7 +307,7 @@ end_time = time.time()
 
 # Generate timestamps.
 timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
-print(f"Complete: 100.00%\n\nTimestamps in Second:")
+print(f"Complete: 100.000%\n\nTimestamps in Second:")
 
 # Save the timestamps.
 with open(save_timestamps_second, "w", encoding='UTF-8') as file:
