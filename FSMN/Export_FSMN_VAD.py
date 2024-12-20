@@ -23,11 +23,11 @@ ORT_Accelerate_Providers = []                               # If you have accele
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # The default dynamic_axes is the input audio length. Note that some providers only support static axes.
 USE_PCM_INT16 = False                                       # Enable it, if the audio input is PCM wav data with dtype int16 (short).
-INPUT_AUDIO_LENGTH = 1536                                   # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 8192. Smaller values yield fine timestamps.
+INPUT_AUDIO_LENGTH = 1024                                   # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 8192. Smaller values yield fine timestamps.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT = 512                                                  # Number of FFT components for the STFT process, edit it carefully.
-HOP_LENGTH = 150                                            # Number of samples between successive frames in the STFT, edit it carefully.
+HOP_LENGTH = 128                                            # Number of samples between successive frames in the STFT, edit it carefully.
 SAMPLE_RATE = 16000                                         # The FSMN_VAD parameter, do not edit the value.
 LFR_M = 5                                                   # The FSMN_VAD parameter, do not edit the value.
 LFR_N = 1                                                   # The FSMN_VAD parameter, do not edit the value.
@@ -38,8 +38,8 @@ SNR_THRESHOLD = 10.0                                        # The judge factor f
 BACKGROUND_NOISE_dB_INIT = 40.0                             # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
 FUSION_THRESHOLD = 1.5                                      # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
 MIN_SPEECH_DURATION = 0.5                                   # A judgment factor used to filter the vad results. Unit: second.
-SPEAKING_SCORE = 0.6                                        # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
-SILENCE_SCORE = 0.6                                         # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
+SPEAKING_SCORE = 0.5                                        # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
+SILENCE_SCORE = 0.5                                         # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
 
 
 STFT_SIGNAL_LENGTH = INPUT_AUDIO_LENGTH // HOP_LENGTH + 1   # The length after STFT processed
@@ -300,7 +300,7 @@ while slice_end <= aligned_len:
             silence = True
     saved.append(silence)
     noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
-    print(f"Complete: {slice_start * inv_audio_len:.2f}%")
+    print(f"Complete: {slice_start * inv_audio_len:.3f}%")
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
 end_time = time.time()
