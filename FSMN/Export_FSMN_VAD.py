@@ -22,7 +22,7 @@ save_timestamps_indices = "./timestamps_indices.txt"        # The saved path.
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # The default dynamic_axes is the input audio length. Note that some providers only support static axes.
-INPUT_AUDIO_LENGTH = 512                                    # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 8192. Smaller values yield fine timestamps.
+INPUT_AUDIO_LENGTH = 512 if not DYNAMIC_AXES else 8192      # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 8192. Smaller values yield fine timestamps.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT = 512                                                  # Number of FFT components for the STFT process, edit it carefully.
@@ -184,7 +184,7 @@ inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
 if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH = min(1536, audio_len)  # Default is 96ms. You can adjust it.
+    INPUT_AUDIO_LENGTH = min(8192, audio_len)  # You can adjust it.
 else:
     INPUT_AUDIO_LENGTH = shape_value_in
 stride_step = INPUT_AUDIO_LENGTH
