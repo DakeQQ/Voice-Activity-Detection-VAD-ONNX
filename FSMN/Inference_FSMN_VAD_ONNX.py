@@ -178,7 +178,7 @@ while slice_end <= aligned_len:
 # Generate timestamps.
 end_time = time.time()
 timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
-print(f"Complete: 100.000%")
+print(f"Complete: 100.00%")
 
 # Save the timestamps.
 with open(save_timestamps_second, "w", encoding='UTF-8') as file:
