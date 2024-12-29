@@ -104,7 +104,7 @@ silero_vad = load_silero_vad(session_opts=session_opts, providers=ORT_Accelerate
 audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float32) * 0.000030517578  # 1/32768
 
 # Start VAD
-print("\n Start to run the VAD process.")
+print("\nStart to run the VAD process.")
 start_time = time.time()
 timestamps = get_speech_timestamps(
     torch.from_numpy(audio),
@@ -136,6 +136,6 @@ with open(save_timestamps_second, "w", encoding='UTF-8') as file:
 with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Indices:")
     for start, end in timestamps:
-        line = f"[{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}]\n"
+        line = f"{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}\n"
         file.write(line)
         print(line.replace("\n", ""))
