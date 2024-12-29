@@ -79,38 +79,9 @@ elif audio_len < INPUT_AUDIO_LENGTH:
 aligned_len = audio.shape[-1]
 
 
-def vad_to_timestamps(vad_output, frame_duration, fusion_threshold=1.0, min_duration=0.5):
-    """
-    Convert VAD output to timestamps with filtering for short durations.
-
-    Parameters:
-    vad_output (list of bool): Voice activity detection output per frame.
-    frame_duration (float): Duration of each frame in seconds.
-    fusion_threshold (float): Threshold to merge consecutive segments in seconds.
-    min_duration (float): Minimum duration of speech to keep in seconds.
-
-    Returns:
-    list of tuple: Filtered and fused timestamps [(start, end), ...].
-    """
-    timestamps = []
-    start = None
-    # Extract raw timestamps
-    for i, silence in enumerate(vad_output):
-        if silence:
-            if start is not None:  # End of the current speaking segment
-                end = i * frame_duration + frame_duration
-                timestamps.append((start, end))
-                start = None
-        else:
-            if start is None:  # Start of a new speaking segment
-                start = i * frame_duration
-    # Handle the case where speech continues until the end
-    if start is not None:
-        timestamps.append((start, len(vad_output) * frame_duration))
+def process_timestamps(timestamps, fusion_threshold=1.0, min_duration=0.5):
     # Filter out short durations
-    filtered_timestamps = [
-        (start, end) for start, end in timestamps if (end - start) >= min_duration
-    ]
+    filtered_timestamps = [(start, end) for start, end in timestamps if (end - start) >= min_duration]
     del timestamps
     # Fuse and filter timestamps
     fused_timestamps_1st = []
@@ -129,6 +100,37 @@ def vad_to_timestamps(vad_output, frame_duration, fusion_threshold=1.0, min_dura
         else:
             fused_timestamps_2nd.append((start, end))
     return fused_timestamps_2nd
+
+
+def vad_to_timestamps(vad_output, frame_duration):
+    timestamps = []
+    start = None
+    # Extract raw timestamps
+    for i, silence in enumerate(vad_output):
+        if silence:
+            if start is not None:  # End of the current speaking segment
+                end = i * frame_duration + frame_duration
+                timestamps.append((start, end))
+                start = None
+        else:
+            if start is None:  # Start of a new speaking segment
+                start = i * frame_duration
+    # Handle the case where speech continues until the end
+    if start is not None:
+        timestamps.append((start, len(vad_output) * frame_duration))
+    return timestamps
+
+
+def format_time(seconds):
+    """Convert seconds to VTT time format 'hh:mm:ss.mmm'."""
+    td = timedelta(seconds=seconds)
+    td_sec = td.total_seconds()
+    total_seconds = int(td_sec)
+    milliseconds = int((td_sec - total_seconds) * 1000)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}"
 
 
 # Start to run FSMN_VAD
@@ -177,14 +179,17 @@ while slice_end <= aligned_len:
 
 # Generate timestamps.
 end_time = time.time()
-timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
+timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE)
+timestamps = process_timestamps(timestamps, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
 print(f"Complete: 100.00%")
 
 # Save the timestamps.
 with open(save_timestamps_second, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Second:")
     for start, end in timestamps:
-        line = f"[{start:.2f} --> {end:.2f}]\n"
+        start_time = format_time(start)
+        end_time = format_time(end)
+        line = f"{start_time} --> {end_time}\n"
         file.write(line)
         print(line.replace("\n", ""))
 
@@ -194,4 +199,5 @@ with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
         line = f"[{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}]\n"
         file.write(line)
         print(line.replace("\n", ""))
+      
 print(f"\nVAD Process Complete.\n\nTime Cost: {end_time - start_time:.3f} Seconds")
