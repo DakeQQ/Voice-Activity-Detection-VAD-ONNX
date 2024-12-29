@@ -119,15 +119,17 @@ print(f"\nVAD Complete. Time Cost: {(time.time() - start_time):.3f} seconds.")
 del audio
 gc.collect()
 
-# Save the timestamps.
+# Generate the timestamps.
 timestamps = [(item['start'], item['end']) for item in timestamps]
 timestamps = process_timestamps(timestamps, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
+
+# Save the timestamps.
 with open(save_timestamps_second, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Second:")
     for start, end in timestamps:
-        start_time = format_time(start)
-        end_time = format_time(end)
-        line = f"{start_time} --> {end_time}\n"
+        s_time = format_time(start)
+        e_time = format_time(end)
+        line = f"{s_time} --> {e_time}\n"
         file.write(line)
         print(line.replace("\n", ""))
 
