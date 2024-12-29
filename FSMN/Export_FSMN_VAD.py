@@ -318,7 +318,7 @@ with open(save_timestamps_second, "w", encoding='UTF-8') as file:
 with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Indices:")
     for start, end in timestamps:
-        line = f"[{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}]\n"
+        line = f"{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}\n"
         file.write(line)
         print(line.replace("\n", ""))
       
