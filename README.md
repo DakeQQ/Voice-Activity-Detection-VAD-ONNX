@@ -9,7 +9,7 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
    - [Silero](https://github.com/snakers4/silero-vad)  (It is a modified version of the official one, optimized for enhanced parallel computing performance.)
 
 2. **Recommendation**:  
-   - It is recommended to use FSMN alongside the [Audio Denoiser](https://github.com/DakeQQ/Audio-Denoiser-ONNX) for optimal performance in noisy environments.  
+   - It is recommended to use the [Audio Denoiser](https://github.com/DakeQQ/Audio-Denoiser-ONNX) for optimal performance in noisy environments.  
 
 3. **End-to-End Processing**:  
    - This model includes internal `STFT` processing.  
@@ -38,7 +38,7 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)  
 
 2. **推荐**：  
-   - 建议将 FSMN 与 [音频降噪器](https://github.com/DakeQQ/Audio-Denoiser-ONNX) 搭配使用，以在嘈杂环境中获得最佳性能。  
+   - 建议与 [音频降噪器](https://github.com/DakeQQ/Audio-Denoiser-ONNX) 搭配使用，以在嘈杂环境中获得最佳性能。  
 
 3. **端到端处理**：  
    - 模型包含内部 `STFT` 处理。  
