@@ -5,7 +5,8 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
 
 ### Features  
 1. **Supported Model**:  
-   - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)  
+   - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
+   - [Silero](https://github.com/snakers4/silero-vad)  (It is a modified version of the official one, optimized for enhanced parallel computing performance.)
 
 2. **Recommendation**:  
    - It is recommended to use FSMN alongside the [Audio Denoiser](https://github.com/DakeQQ/Audio-Denoiser-ONNX) for optimal performance in noisy environments.  
@@ -25,8 +26,8 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
 | OS           | Device       | Backend           | Model        | Real-Time Factor <br> (Chunk Size: 1600 or 100ms) |
 |:------------:|:------------:|:-----------------:|:------------:|:------------------------------------------------:|
 | Ubuntu-24.04 | Laptop       | CPU <br> i5-7300HQ | FSMN <br> f32 | 0.0047                                            |
-| Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | FSMN <br> f32 | 0.0018                                            |  
-
+| Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | FSMN <br> f32  | 0.0018                                            |  
+| Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | Silero <br> f32  | 0.0026                                          |  
 ---
 
 ## Voice-Activity-Detection-VAD-ONNX  
