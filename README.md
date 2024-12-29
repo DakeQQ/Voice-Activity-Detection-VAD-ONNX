@@ -6,7 +6,7 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
 ### Features  
 1. **Supported Model**:  
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
-   - [Silero](https://github.com/snakers4/silero-vad)  (Optimized for enhanced parallel computing performanc)
+   - [Silero](https://github.com/snakers4/silero-vad)  (Optimized for enhanced parallel computing performance)
 
 2. **Recommendation**:  
    - It is recommended to use the [Audio Denoiser](https://github.com/DakeQQ/Audio-Denoiser-ONNX) for optimal performance in noisy environments.  
