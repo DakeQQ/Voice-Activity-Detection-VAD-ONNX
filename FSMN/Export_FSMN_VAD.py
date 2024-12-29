@@ -1,6 +1,7 @@
 import gc
 import shutil
 import time
+from datetime import timedelta
 
 import numpy as np
 import onnxruntime
@@ -300,7 +301,6 @@ while slice_end <= aligned_len:
 end_time = time.time()
 
 # Generate timestamps.
-end_time = time.time()
 timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE)
 timestamps = process_timestamps(timestamps, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
 print(f"Complete: 100.00%")
@@ -309,9 +309,9 @@ print(f"Complete: 100.00%")
 with open(save_timestamps_second, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Second:")
     for start, end in timestamps:
-        start_time = format_time(start)
-        end_time = format_time(end)
-        line = f"{start_time} --> {end_time}\n"
+        s_time = format_time(start)
+        e_time = format_time(end)
+        line = f"{s_time} --> {e_time}\n"
         file.write(line)
         print(line.replace("\n", ""))
 
