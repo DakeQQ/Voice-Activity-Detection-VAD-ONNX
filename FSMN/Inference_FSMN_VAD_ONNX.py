@@ -177,6 +177,7 @@ while slice_end <= aligned_len:
     print(f"Complete: {slice_start * inv_audio_len:.3f}%")
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
+end_time = time.time()
 
 # Generate timestamps.
 timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE)
