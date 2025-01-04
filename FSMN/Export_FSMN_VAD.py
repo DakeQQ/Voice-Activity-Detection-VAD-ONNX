@@ -22,7 +22,7 @@ save_timestamps_indices = "./timestamps_indices.txt"        # The saved path.
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # The default dynamic_axes is the input audio length. Note that some providers only support static axes.
-INPUT_AUDIO_LENGTH = 1536 if not DYNAMIC_AXES else 1536      # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 1536. Smaller values yield fine timestamps.
+INPUT_AUDIO_LENGTH = 512 if not DYNAMIC_AXES else 1536      # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 1536. Smaller values yield fine timestamps.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT = 512                                                  # Number of FFT components for the STFT process, edit it carefully.
