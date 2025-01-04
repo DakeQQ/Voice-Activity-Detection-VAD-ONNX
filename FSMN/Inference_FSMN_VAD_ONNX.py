@@ -5,7 +5,7 @@ import numpy as np
 import onnxruntime
 from pydub import AudioSegment
 
-onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_Optimized/FSMN_VAD.ort"         # The exported onnx model path.
+onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_Optimized/FSMN.ort"         # The exported onnx model path.
 test_vad_audio = "./vad_sample.wav"                                             # The test audio path.
 save_timestamps_second = "./timestamps_second.txt"                              # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"                            # The saved path.
@@ -16,8 +16,8 @@ SAMPLE_RATE = 16000                     # The FSMN_VAD parameter, do not edit th
 ONE_MINUS_SPEECH_THRESHOLD = 1.0        # The judge factor for the VAD model edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech.
 SNR_THRESHOLD = 10.0                    # The judge factor for VAD model. Unit: dB.
 BACKGROUND_NOISE_dB_INIT = 40.0         # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
-FUSION_THRESHOLD = 0.7                  # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
-MIN_SPEECH_DURATION = 0.3               # A judgment factor used to filter the vad results. Unit: second.
+FUSION_THRESHOLD = 0.5                  # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
+MIN_SPEECH_DURATION = 0.2               # A judgment factor used to filter the vad results. Unit: second.
 SPEAKING_SCORE = 0.5                    # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
 SILENCE_SCORE = 0.5                     # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
 
