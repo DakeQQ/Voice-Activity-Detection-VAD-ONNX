@@ -1,6 +1,7 @@
 import gc
 import shutil
 import time
+import site
 from datetime import timedelta
 
 import numpy as np
@@ -11,10 +12,8 @@ from pydub import AudioSegment
 
 from STFT_Process import STFT_Process  # The custom STFT/ISTFT can be exported in ONNX format.
 
-model_path = "/home/DakeQQ/Downloads/speech_fsmn_vad_zh-cn-16k-common-pytorch"                                                            # The FSMN_VAD download path.
-onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_ONNX/FSMN_VAD.onnx"                                                                       # The exported onnx model path.
-python_fsmn_vad_path = '/home/DakeQQ/anaconda3/envs/python_312/lib/python3.12/site-packages/funasr/models/fsmn_vad_streaming/encoder.py'  # The FSMN_VAD python script path.
-modified_path = './modeling_modified/'
+model_path = "/home/DakeQQ/Downloads/speech_fsmn_vad_zh-cn-16k-common-pytorch"        # The FSMN_VAD download path.
+onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_ONNX/FSMN.onnx"                       # The exported onnx model path.
 test_vad_audio = "./vad_sample.wav"                         # The test audio path.
 save_timestamps_second = "./timestamps_second.txt"          # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"        # The saved path.
@@ -23,7 +22,7 @@ save_timestamps_indices = "./timestamps_indices.txt"        # The saved path.
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # The default dynamic_axes is the input audio length. Note that some providers only support static axes.
-INPUT_AUDIO_LENGTH = 512 if not DYNAMIC_AXES else 8192      # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 8192. Smaller values yield fine timestamps.
+INPUT_AUDIO_LENGTH = 1536 if not DYNAMIC_AXES else 1536      # Set for static axis export: the length of the audio input signal (in samples) is recommended to be greater than 512 and less than 1536. Smaller values yield fine timestamps.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT = 512                                                  # Number of FFT components for the STFT process, edit it carefully.
@@ -36,8 +35,8 @@ SPEECH_2_NOISE_RATIO = 1.0                                  # The judge factor f
 ONE_MINUS_SPEECH_THRESHOLD = 1.0                            # The judge factor for the VAD model, edit it carefully. A higher value increases sensitivity but may mistakenly classify noise as speech.
 SNR_THRESHOLD = 10.0                                        # The judge factor for VAD model. Unit: dB.
 BACKGROUND_NOISE_dB_INIT = 40.0                             # An initial value for the background. More smaller values indicate a quieter environment. Unit: dB. When using denoised audio, set this value to be smaller.
-FUSION_THRESHOLD = 0.7                                      # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
-MIN_SPEECH_DURATION = 0.3                                   # A judgment factor used to filter the vad results. Unit: second.
+FUSION_THRESHOLD = 0.5                                      # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
+MIN_SPEECH_DURATION = 0.2                                   # A judgment factor used to filter the vad results. Unit: second.
 SPEAKING_SCORE = 0.5                                        # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
 SILENCE_SCORE = 0.5                                         # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
 
@@ -50,7 +49,7 @@ if HOP_LENGTH > INPUT_AUDIO_LENGTH:
     HOP_LENGTH = INPUT_AUDIO_LENGTH
 
 
-shutil.copyfile(modified_path + "encoder.py", python_fsmn_vad_path)
+shutil.copyfile('./modeling_modified/encoder.py', site.getsitepackages()[0] + "/funasr/models/fsmn_vad_streaming/encoder.py")
 from funasr import AutoModel
 
 
@@ -185,7 +184,7 @@ inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
 if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH = min(8192, audio_len)  # You can adjust it.
+    INPUT_AUDIO_LENGTH = min(1536, audio_len)  # You can adjust it.
 else:
     INPUT_AUDIO_LENGTH = shape_value_in
 stride_step = INPUT_AUDIO_LENGTH
