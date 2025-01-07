@@ -49,7 +49,7 @@ if HOP_LENGTH > INPUT_AUDIO_LENGTH:
     HOP_LENGTH = INPUT_AUDIO_LENGTH
 
 
-shutil.copyfile('./modeling_modified/encoder.py', site.getsitepackages()[0] + "/funasr/models/fsmn_vad_streaming/encoder.py")
+shutil.copyfile('./modeling_modified/encoder.py', site.getsitepackages()[-1] + "/funasr/models/fsmn_vad_streaming/encoder.py")
 from funasr import AutoModel
 
 
