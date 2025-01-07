@@ -1,5 +1,6 @@
 import gc
 import shutil
+import site
 import time
 import torch
 import numpy as np
@@ -11,7 +12,6 @@ from pydub import AudioSegment
 test_vad_audio = "./vad_sample.wav"                            # The test audio path.
 save_timestamps_second = "./timestamps_second.txt"             # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"           # The saved path.
-silero_vad_python_package_path = "/home/DakeQQ/anaconda3/envs/python_312/lib/python3.12/site-packages/silero_vad"  # Please run "pip install silero-vad --upgrade" first.
 
 
 ORT_Accelerate_Providers = []                       # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
@@ -24,9 +24,9 @@ MAX_SPEECH_DURATION = 20                            # Set for silero_vad, maximu
 MIN_SILENCE_DURATION = 250                          # Set for silero_vad, minimum silence duration time. Unit: ms.
 SAMPLE_RATE = 16000                                 # Silero VAD accept the audio with 8kHz or 16kHz.
 
-
-shutil.copyfile("./modeling_modified/utils_vad.py", silero_vad_python_package_path + "/utils_vad.py")
-shutil.copyfile("./modeling_modified/model.py", silero_vad_python_package_path + "/model.py")
+site_package_path = site.getsitepackages()[-1]
+shutil.copyfile("./modeling_modified/utils_vad.py", site_package_path + "/silero_vad/utils_vad.py")
+shutil.copyfile("./modeling_modified/model.py", site_package_path + "/silero_vad/model.py")
 from silero_vad import load_silero_vad, get_speech_timestamps
 
 
