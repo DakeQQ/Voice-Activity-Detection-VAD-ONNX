@@ -21,6 +21,16 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
    - [Explore More Projects](https://dakeqq.github.io/overview/)  
 
 ---
+### 输出示例 Example Output
+```python
+Timestamps in Second:
+00:00:00.500 --> 00:00:02.500
+00:00:04.200 --> 00:00:05.599
+
+Timestamps in Indices:
+8000 --> 40000
+67200 --> 89600
+```
 
 ### 性能 Performance  
 | OS           | Device       | Backend           | Model        | Real-Time Factor <br> (Chunk Size: 512 or 32ms) |
