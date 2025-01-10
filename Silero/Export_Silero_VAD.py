@@ -16,8 +16,8 @@ save_timestamps_second = "./timestamps_second.txt"             # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"           # The saved path.
 
 
-ORT_Accelerate_Providers = ['CPUExecutionProvider']  # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
-                                                     # else keep empty.
+ORT_Accelerate_Providers = []                       # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
+                                                    # else keep empty.
 provider_options = []
 ACTIVATE_THRESHOLD = 0.5                            # Set for silero_vad, none-silence state threshold.
 FUSION_THRESHOLD = 0.3                              # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
