@@ -15,6 +15,6 @@ def load_silero_vad(session_opts, providers, provider_options):
         except:
             model_file_path = str(impresources.files(package_path).joinpath(model_name))
 
-    model = OnnxWrapper("/home/iamj/Downloads/Voice-Activity-Detection-VAD-ONNX-main/Silero/silero_opt.onnx", session_opts, providers, provider_options)
+    model = OnnxWrapper(model_file_path, session_opts, providers, provider_options)
     
     return model
