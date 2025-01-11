@@ -109,7 +109,7 @@ model_path = site_package_path + '/silero_vad/data/silero_vad.onnx'
 slim(
     model=model_path,
     output_model=model_path,
-    no_shape_infer=False,   # True for more optimize but may get errors.
+    no_shape_infer=False,   # False for more optimize but may get errors.
     skip_fusion_patterns=False,
     no_constant_folding=False,
     save_as_external_data=False,
@@ -136,7 +136,7 @@ gc.collect()
 slim(
     model=model_path,
     output_model=model_path,
-    no_shape_infer=False,   # True for more optimize but may get errors.
+    no_shape_infer=False,   # False for more optimize but may get errors.
     skip_fusion_patterns=False,
     no_constant_folding=False,
     save_as_external_data=False,
