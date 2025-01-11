@@ -16,6 +16,7 @@ save_timestamps_second = "./timestamps_second.txt"             # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"           # The saved path.
 
 
+use_gpu_fp16 = False                                # If true, the transformers.optimizer will remain the FP16 processes.
 ORT_Accelerate_Providers = ['CPUExecutionProvider'] # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                     # else keep empty.
 provider_options = None
@@ -25,7 +26,6 @@ MIN_SPEECH_DURATION = 0.25                          # A judgment factor used to 
 MAX_SPEECH_DURATION = 20                            # Set for silero_vad, maximum silence duration time. Unit: second.
 MIN_SILENCE_DURATION = 250                          # Set for silero_vad, minimum silence duration time. Unit: ms.
 SAMPLE_RATE = 16000                                 # Silero VAD accept the audio with 8kHz or 16kHz.
-use_gpu_fp16 = False                                # If true, the transformers.optimizer will remain the FP16 processes.
 target_platform = "amd64"                           # ['arm', 'amd64']; The 'amd64' means x86_64 desktop, not means the AMD chip.
 
 
@@ -42,7 +42,10 @@ session_opts.inter_op_num_threads = 0               # Run different nodes with n
 session_opts.intra_op_num_threads = 0               # Under the node, execute the operators with num_threads. Set 0 for auto.
 session_opts.enable_cpu_mem_arena = True            # True for execute speed; False for less memory usage.
 session_opts.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
-session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+if use_gpu_fp16:
+    session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+else:
+    session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
 session_opts.add_session_config_entry("session.intra_op.allow_spinning", "1")
 session_opts.add_session_config_entry("session.inter_op.allow_spinning", "1")
 session_opts.add_session_config_entry("session.set_denormal_as_zero", "1")
@@ -150,7 +153,7 @@ silero_vad = load_silero_vad(session_opts=session_opts, providers=ORT_Accelerate
 
 
 # Load the audio
-audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float32) * 0.000030517578  # 1/32768
+audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float16 if use_gpu_fp16 else np.float32) * 0.000030517578  # 1/32768
 
 # Start VAD
 print("\nStart to run the VAD process.")
