@@ -12,7 +12,7 @@ test_vad_audio = "./vad_sample.wav"                            # The test audio 
 save_timestamps_second = "./timestamps_second.txt"             # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"           # The saved path.
 
-use_gpu_fp16 = False
+use_gpu_fp16 = False                                # Must first run Export_Silero_VAD.py with use_gpu_fp16=True to generate silero_vad.onnx in float16 format.
 ORT_Accelerate_Providers = []                       # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                     # else keep empty.
 provider_options = None
