@@ -62,11 +62,11 @@ class OnnxWrapper():
             self.reset_states(batch_size)
 
         if not len(self._context):
-            self._context = torch.zeros(batch_size, context_size)
+            self._context = torch.zeros(batch_size, context_size, dtype=x.dtype)
 
         x = torch.cat([self._context, x], dim=1)
         if sr in [8000, 16000]:
-            ort_inputs = {'input': x.numpy(), 'state': self._state.numpy(), 'sr': np.array(sr, dtype='int64')}
+            ort_inputs = {'input': x.numpy(), 'state': self._state.to(x.dtype).numpy(), 'sr': np.array(sr, dtype='int64')}
             ort_outs = self.session.run(None, ort_inputs)
             out, state = ort_outs
             self._state = torch.from_numpy(state)
