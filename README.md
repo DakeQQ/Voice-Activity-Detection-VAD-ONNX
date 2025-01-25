@@ -18,7 +18,7 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
 
 4. **Resources**:  
    - [Download Models](https://drive.google.com/drive/folders/1htM4FYpxEQcouHiR2Wyb407EhD1t_0HB?usp=sharing)  
-   - [Explore More Projects](https://dakeqq.github.io/overview/)  
+   - [Explore More Projects](https://github.com/DakeQQ?tab=repositories)  
 
 ---
 ### 输出示例 Example Output
@@ -58,6 +58,6 @@ Timestamps in Indices:
 
 4. **资源**：  
    - [下载模型](https://drive.google.com/drive/folders/1htM4FYpxEQcouHiR2Wyb407EhD1t_0HB?usp=sharing)  
-   - [探索更多项目](https://dakeqq.github.io/overview/)  
+   - [探索更多项目](https://github.com/DakeQQ?tab=repositories)  
 
 ---
