@@ -57,7 +57,7 @@ out_name_A5 = out_name_A[5].name
 
 # # Load the input audio
 print(f"\nTest Input Audio: {test_vad_audio}")
-audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples())
+audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
 audio_len = len(audio)
 inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
