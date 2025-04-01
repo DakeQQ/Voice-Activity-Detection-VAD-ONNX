@@ -53,6 +53,12 @@ shutil.copyfile('./modeling_modified/encoder.py', site.getsitepackages()[-1] + "
 from funasr import AutoModel
 
 
+def normalize_to_int16(audio_int64):
+    max_val = np.max(np.abs(audio_int64.astype(np.float32)))
+    scaling_factor = 32767.0 / max_val if max_val > 0 else 1.0
+    return (audio_int64 * float(scaling_factor)).astype(np.int16)
+
+
 class FSMN_VAD(torch.nn.Module):
     def __init__(self, fsmn_vad, stft_model, nfft, n_mels, sample_rate, pre_emphasis, lfr_m, lfr_n, lfr_len, ref_len, speech_2_noise_ratio, input_audio_len, hop_len, cmvn_means, cmvn_vars):
         super(FSMN_VAD, self).__init__()
@@ -65,6 +71,7 @@ class FSMN_VAD(torch.nn.Module):
         self.T_lfr = lfr_len
         self.cmvn_means = cmvn_means
         self.cmvn_vars = cmvn_vars
+        self.inv_int16 = float(1.0 / 32768.0)
         indices = torch.arange(0, self.T_lfr * lfr_n, lfr_n, dtype=torch.int32).unsqueeze(1) + torch.arange(lfr_m, dtype=torch.int32)
         self.indices_mel = indices.clamp(max=ref_len + self.lfr_m_factor - 1)  # Ensure no out-of-bounds access
         self.indices_audio = torch.arange(nfft, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft + 1, hop_len, dtype=torch.int32).unsqueeze(-1)
@@ -72,7 +79,7 @@ class FSMN_VAD(torch.nn.Module):
         # 2e-5 is reference air_pressure value
 
     def forward(self, audio, cache_0, cache_1, cache_2, cache_3, one_minus_speech_threshold, noise_average_dB):
-        audio = audio.float()
+        audio = audio.float() * self.int_inv16
         audio -= torch.mean(audio)  # Remove DC Offset
         audio = torch.cat((audio[:, :, :1], audio[:, :, 1:] - self.pre_emphasis * audio[:, :, :-1]), dim=-1)  # Pre Emphasize
         real_part, imag_part = self.stft_model(audio, 'constant')
@@ -178,7 +185,8 @@ out_name_A5 = out_name_A[5].name
 
 # # Load the input audio
 print(f"\nTest Input Audio: {test_vad_audio}")
-audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
+audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int32)
+audio = normalize_to_int16(audio)
 audio_len = len(audio)
 inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
