@@ -53,12 +53,6 @@ shutil.copyfile('./modeling_modified/encoder.py', site.getsitepackages()[-1] + "
 from funasr import AutoModel
 
 
-def normalize_to_int16(audio_int64):
-    max_val = np.max(np.abs(audio_int64.astype(np.float32)))
-    scaling_factor = 32767.0 / max_val if max_val > 0 else 1.0
-    return (audio_int64 * float(scaling_factor)).astype(np.int16)
-
-
 class FSMN_VAD(torch.nn.Module):
     def __init__(self, fsmn_vad, stft_model, nfft, n_mels, sample_rate, pre_emphasis, lfr_m, lfr_n, lfr_len, ref_len, speech_2_noise_ratio, input_audio_len, hop_len, cmvn_means, cmvn_vars):
         super(FSMN_VAD, self).__init__()
@@ -183,9 +177,15 @@ out_name_A4 = out_name_A[4].name
 out_name_A5 = out_name_A[5].name
 
 
+def normalize_to_int16(audio):
+    max_val = np.max(np.abs(audio))
+    scaling_factor = 32767.0 / max_val if max_val > 0 else 1.0
+    return (audio * float(scaling_factor)).astype(np.int16)
+
+
 # # Load the input audio
 print(f"\nTest Input Audio: {test_vad_audio}")
-audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int32)
+audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float32)
 audio = normalize_to_int16(audio)
 audio_len = len(audio)
 inv_audio_len = float(100.0 / audio_len)
