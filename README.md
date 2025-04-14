@@ -40,6 +40,10 @@ Timestamps in Indices:
 
 ---
 
+## To Do List
+- [Monotonic-Aligner](https://modelscope.cn/models/iic/speech_timestamp_prediction-v1-16k-offline/summary)
+- [Pyannote-Segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+
 ## Voice-Activity-Detection-VAD-ONNX  
 通过 ONNX Runtime 实现高性能的语音活动检测。  
 
