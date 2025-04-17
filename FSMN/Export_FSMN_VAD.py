@@ -1,4 +1,5 @@
 import gc
+import math
 import time
 import torch
 import site
@@ -19,7 +20,7 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
-DYNAMIC_AXES = False                                        # The default dynamic_axes is the input audio length. Note that some providers only support static axes.
+DYNAMIC_AXES = False                                        # Only support static axes.
 INPUT_AUDIO_LENGTH = 3200                                   # The maximum input audio segment length.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
@@ -55,8 +56,8 @@ class FSMN_VAD(torch.nn.Module):
         super(FSMN_VAD, self).__init__()
         self.fsmn_vad = fsmn_vad
         self.stft_model = stft_model
-        self.speech_2_noise_ratio = speech_2_noise_ratio
-        self.pre_emphasis = torch.tensor(pre_emphasis, dtype=torch.float32)
+        self.speech_2_noise_ratio = float(speech_2_noise_ratio)
+        self.pre_emphasis = float(pre_emphasis)
         self.fbank = (torchaudio.functional.melscale_fbanks(nfft_fbank // 2 + 1, 20, sample_rate // 2, n_mels, sample_rate, None,'htk')).transpose(0, 1).unsqueeze(0)
         self.nfft_stft = nfft_stft
         self.nfft_fbank = nfft_fbank
@@ -73,7 +74,7 @@ class FSMN_VAD(torch.nn.Module):
         indices = torch.arange(0, self.T_lfr * lfr_n, lfr_n, dtype=torch.int32).unsqueeze(1) + torch.arange(lfr_m, dtype=torch.int32)
         self.indices_mel = indices.clamp(max=stft_signal_len + self.lfr_m_factor - 1)  # Ensure no out-of-bounds access
         self.indices_audio = torch.arange(nfft_fbank, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft_fbank + 1, hop_len, dtype=torch.int32).unsqueeze(-1)
-        self.inv_reference_air_factor = torch.tensor(1.0 / 2e-5, dtype=torch.float32) if DYNAMIC_AXES else torch.tensor(1.0 / (torch.sqrt(torch.tensor(input_audio_len)) * 2e-5), dtype=torch.float32)
+        self.inv_reference_air_factor = float(1.0 / (math.sqrt(input_audio_len) * 2e-5))
         # 2e-5 is reference air_pressure value
 
     def forward(self, audio, cache_0, cache_1, cache_2, cache_3, one_minus_speech_threshold, noise_average_dB):
@@ -88,7 +89,7 @@ class FSMN_VAD(torch.nn.Module):
         left_padding = mel_features[:, [0], :]
         left_padding = torch.cat([left_padding for _ in range(self.lfr_m_factor)], dim=1)
         padded_inputs = torch.cat((left_padding, mel_features), dim=1)
-        mel_features = padded_inputs[:, self.indices_mel].reshape(1, self.T_lfr, -1)  # Merge time and feature dims
+        mel_features = padded_inputs[:, self.indices_mel].reshape(1, self.T_lfr, -1)
         score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad.forward((mel_features + self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
         if self.speech_2_noise_ratio > 1.0:
             score += torch.pow(score, self.speech_2_noise_ratio)
@@ -96,7 +97,7 @@ class FSMN_VAD(torch.nn.Module):
             score += 1.0
         else:
             score += score
-        audio = (audio * self.inv_reference_air_factor / torch.sqrt(torch.tensor(audio.shape[-1], dtype=torch.float32))).squeeze()[self.indices_audio] if DYNAMIC_AXES else (audio * self.inv_reference_air_factor).squeeze()[self.indices_audio]
+        audio = (audio * self.inv_reference_air_factor).squeeze()[self.indices_audio]
         power_db = 10.0 * torch.log10(torch.sum(audio * audio, dim=-1) + 0.00002)
         padding = power_db[-1:].expand((score.shape[-1] - power_db.shape[-1]))
         power_db = torch.cat((power_db, padding), dim=-1)
@@ -109,7 +110,7 @@ class FSMN_VAD(torch.nn.Module):
 
 print('Export start ...')
 with torch.inference_mode():
-    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT_STFT, n_mels=N_MELS, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
+    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT_STFT, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
     fsmn_vad = AutoModel(
         model=model_path,
         disable_update=True,
@@ -198,11 +199,7 @@ audio = normalize_to_int16(audio)
 audio_len = len(audio)
 inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
-shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
-if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH = min(1536, audio_len)  # You can adjust it.
-else:
-    INPUT_AUDIO_LENGTH = shape_value_in
+INPUT_AUDIO_LENGTH = ort_session_A._inputs_meta[0].shape[-1]
 stride_step = INPUT_AUDIO_LENGTH
 if audio_len > INPUT_AUDIO_LENGTH:
     num_windows = int(np.ceil((audio_len - INPUT_AUDIO_LENGTH) / stride_step)) + 1
