@@ -98,13 +98,13 @@ class FSMN_VAD(torch.nn.Module):
         else:
             score += score
         audio = (audio * self.inv_reference_air_factor).squeeze()[self.indices_audio]
-        power_db = 10.0 * torch.log10(torch.sum(audio * audio, dim=-1) + 0.00002)
-        padding = power_db[-1:].expand((score.shape[-1] - power_db.shape[-1]))
-        power_db = torch.cat((power_db, padding), dim=-1)
+        power_dB = 10.0 * torch.log10(torch.sum(audio * audio, dim=-1) + 0.00002)
+        padding = power_dB[-1:].expand((score.shape[-1] - power_dB.shape[-1]))
+        power_dB = torch.cat((power_dB, padding), dim=-1)
         condition = (score <= one_minus_speech_threshold)
-        speaking_db = power_db[torch.where((condition & (power_db >= noise_average_dB)))]
-        noisy_dB = power_db[torch.where(~condition)].mean()
-        score = speaking_db.shape[-1] / score.shape[-1]
+        speaking_dB = power_dB[torch.where((condition & (power_dB >= noise_average_dB)))]
+        noisy_dB = power_dB[torch.where(~condition)].mean()
+        score = speaking_dB.shape[-1] / score.shape[-1]
         return score, cache_0, cache_1, cache_2, cache_3, noisy_dB
 
 
