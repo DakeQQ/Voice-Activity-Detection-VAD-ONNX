@@ -21,7 +21,7 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # Only support static axes.
-INPUT_AUDIO_LENGTH = 3200                                   # The maximum input audio segment length.
+INPUT_AUDIO_LENGTH = 3200                                   # The input audio segment length.
 WINDOW_TYPE = 'kaiser'                                      # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT_STFT = 512                                             # Number of FFT components for the STFT process, edit it carefully.
