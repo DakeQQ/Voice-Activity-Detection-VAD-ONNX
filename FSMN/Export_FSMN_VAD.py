@@ -90,7 +90,7 @@ class FSMN_VAD(torch.nn.Module):
         left_padding = torch.cat([left_padding for _ in range(self.lfr_m_factor)], dim=1)
         padded_inputs = torch.cat((left_padding, mel_features), dim=1)
         mel_features = padded_inputs[:, self.indices_mel].reshape(1, self.T_lfr, -1)
-        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad.forward((mel_features + self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
+        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad((mel_features + self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
         if self.speech_2_noise_ratio > 1.0:
             score += torch.pow(score, self.speech_2_noise_ratio)
         elif self.speech_2_noise_ratio < 1.0:
@@ -98,13 +98,14 @@ class FSMN_VAD(torch.nn.Module):
         else:
             score += score
         audio = (audio * self.inv_reference_air_factor).squeeze()[self.indices_audio]
-        power_dB = 10.0 * torch.log10(torch.sum(audio * audio, dim=-1) + 0.00002)
-        padding = power_dB[-1:].expand((score.shape[-1] - power_dB.shape[-1]))
+        power_dB = torch.log10(torch.sum(audio * audio, dim=-1) + 0.00002)  # Original: 10 * log10(x) -> noise_average_dB * 0.1; SNR_THRESHOLD * 0.1
+        total_frames = score.shape[-1]
+        padding = power_dB[-1:].expand((total_frames - power_dB.shape[-1]))
         power_dB = torch.cat((power_dB, padding), dim=-1)
-        condition = (score <= one_minus_speech_threshold)
-        speaking_dB = power_dB[torch.where((condition & (power_dB >= noise_average_dB)))]
-        noisy_dB = power_dB[torch.where(~condition)].mean()
-        score = speaking_dB.shape[-1] / score.shape[-1]
+        condition = (score <= one_minus_speech_threshold) & (power_dB >= noise_average_dB)
+        speaking_dB = power_dB[condition]
+        noisy_dB = power_dB[~condition].mean()
+        score = speaking_dB.shape[-1] / total_frames
         return score, cache_0, cache_1, cache_2, cache_3, noisy_dB
 
 
@@ -282,7 +283,8 @@ cache_2 = cache_0
 cache_3 = cache_0
 slice_start = 0
 slice_end = INPUT_AUDIO_LENGTH
-SNR_THRESHOLD = SNR_THRESHOLD * 0.5
+noise_average_dB *= 0.1
+SNR_THRESHOLD *= 0.1
 silence = True
 saved = []
 print("\nRunning the FSMN_VAD by ONNX Runtime.")
@@ -306,7 +308,8 @@ while slice_end <= aligned_len:
         if score <= SILENCE_SCORE:
             silence = True
     saved.append(silence)
-    noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
+    if noisy_dB > 0.0:
+        noise_average_dB = 0.5 * (noise_average_dB + noisy_dB + SNR_THRESHOLD)
     print(f"Complete: {slice_start * inv_audio_len:.3f}%")
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
@@ -335,3 +338,4 @@ with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
         print(line.replace("\n", ""))
       
 print(f"\nVAD Process Complete.\n\nTime Cost: {end_time - start_time:.3f} Seconds")
+
