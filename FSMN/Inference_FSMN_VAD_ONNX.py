@@ -156,7 +156,8 @@ cache_2 = cache_0
 cache_3 = cache_0
 slice_start = 0
 slice_end = INPUT_AUDIO_LENGTH
-SNR_THRESHOLD = SNR_THRESHOLD * 0.5
+noise_average_dB *= 0.1
+SNR_THRESHOLD *= 0.1
 silence = True
 saved = []
 print("\nRunning the FSMN_VAD by ONNX Runtime.")
@@ -180,7 +181,8 @@ while slice_end <= aligned_len:
         if score <= SILENCE_SCORE:
             silence = True
     saved.append(silence)
-    noise_average_dB = 0.5 * (noise_average_dB + noisy_dB) + SNR_THRESHOLD
+    if noisy_dB > 0.0:
+        noise_average_dB = 0.5 * (noise_average_dB + noisy_dB + SNR_THRESHOLD)
     print(f"Complete: {slice_start * inv_audio_len:.3f}%")
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
