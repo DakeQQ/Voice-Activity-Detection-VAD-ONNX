@@ -90,7 +90,7 @@ class FSMN_VAD(torch.nn.Module):
         left_padding = torch.cat([left_padding for _ in range(self.lfr_m_factor)], dim=1)
         padded_inputs = torch.cat((left_padding, mel_features), dim=1)
         mel_features = padded_inputs[:, self.indices_mel].reshape(1, self.T_lfr, -1)
-        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad((mel_features + self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
+        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad((mel_features - self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
         if self.speech_2_noise_ratio > 1.0:
             score += torch.pow(score, self.speech_2_noise_ratio)
         elif self.speech_2_noise_ratio < 1.0:
