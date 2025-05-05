@@ -26,7 +26,6 @@ MIN_SPEECH_DURATION = 0.25                          # A judgment factor used to 
 MAX_SPEECH_DURATION = 20                            # Set for silero_vad, maximum silence duration time. Unit: second.
 MIN_SILENCE_DURATION = 250                          # Set for silero_vad, minimum silence duration time. Unit: ms.
 SAMPLE_RATE = 16000                                 # Silero VAD accept the audio with 8kHz or 16kHz.
-target_platform = "amd64"                           # ['arm', 'amd64']; The 'amd64' means x86_64 desktop, not means the AMD chip.
 
 
 site_package_path = site.getsitepackages()[-1]
@@ -124,7 +123,7 @@ slim(
 # transformers.optimizer
 model = optimize_model(model_path,
                        use_gpu=use_gpu_fp16,
-                       opt_level=99 if (target_platform == "amd64") and not use_gpu_fp16 else 2,
+                       opt_level=2,
                        num_heads=0,
                        hidden_size=0,
                        provider=ORT_Accelerate_Providers[0],
