@@ -35,9 +35,15 @@ if use_gpu_fp16:
     session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
 else:
     session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+session_opts.add_session_config_entry("session.set_denormal_as_zero", "1")
 session_opts.add_session_config_entry("session.intra_op.allow_spinning", "1")
 session_opts.add_session_config_entry("session.inter_op.allow_spinning", "1")
-session_opts.add_session_config_entry("session.set_denormal_as_zero", "1")
+session_opts.add_session_config_entry("session.enable_quant_qdq_cleanup", "1")
+session_opts.add_session_config_entry("session.qdq_matmulnbits_accuracy_level", "4")
+session_opts.add_session_config_entry("optimization.enable_gelu_approximation", "1")
+session_opts.add_session_config_entry("disable_synchronize_execution_providers", "1")
+session_opts.add_session_config_entry("optimization.minimal_build_optimizations", "")
+session_opts.add_session_config_entry("session.use_device_allocator_for_initializers", "1")
 
 
 def process_timestamps(timestamps, fusion_threshold=1.0, min_duration=0.5):
