@@ -53,6 +53,13 @@ class NVIDIA_VAD(torch.nn.Module):
         self.pre_emphasis = float(pre_emphasis)
         self.fbank = (torchaudio.functional.melscale_fbanks(nfft_stft // 2 + 1, 20, sample_rate // 2, n_mels, sample_rate, None,'htk')).transpose(0, 1).unsqueeze(0)
         self.inv_int16 = float(1.0 / 32768.0)
+        for i in self.nvidia_vad.encoder.encoder:
+            for j in i.mconv:
+                j.use_mask = False
+            if i.res:
+                for j in i.res:
+                    for k in j:
+                        k.use_mask = False
 
     def forward(self, audio):
         audio = audio.float() * self.inv_int16
