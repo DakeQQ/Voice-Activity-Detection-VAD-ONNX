@@ -68,9 +68,9 @@ class NVIDIA_VAD(torch.nn.Module):
         real_part, imag_part = self.stft_model(audio, 'constant')
         mel_features = (torch.matmul(self.fbank, real_part * real_part + imag_part * imag_part) + 1e-5).log()
         encoded, signal_len = self.nvidia_vad.encoder(([mel_features], mel_features.shape[-1].unsqueeze(0)))
-        logits = self.nvidia_vad.decoder(encoded.transpose(1, 2))
-        logits_silence, logits_active = torch.split(logits, [1, 1], dim=-1)
-        return logits_silence, logits_active, signal_len.int()
+        score = torch.softmax(self.nvidia_vad.decoder(encoded.transpose(1, 2)), dim=-1)
+        score_silence, score_active = torch.split(score, [1, 1], dim=-1)
+        return score_silence, score_active, signal_len.int()
 
 
 print('Export start ...')
@@ -85,12 +85,12 @@ with torch.inference_mode():
         (audio,),
         onnx_model_A,
         input_names=['audio'],
-        output_names=['logits_silence', 'logits_active', 'signal_len'],
+        output_names=['score_silence', 'score_active', 'signal_len'],
         do_constant_folding=True,
         dynamic_axes={
             'audio': {2: 'audio_len'},
-            'logits_active': {1: 'signal_len'},
-            'logits_silence': {1: 'signal_len'}
+            'score_active': {1: 'signal_len'},
+            'score_silence': {1: 'signal_len'}
         } if DYNAMIC_AXES else None,
         opset_version=17
     )
@@ -222,14 +222,14 @@ saved = []
 print("\nRunning the NVIDIA_VAD by ONNX Runtime.")
 start_time = time.time()
 while slice_end <= aligned_len:
-    logits_silence, logits_active, signal_len = ort_session_A.run(
+    score_silence, score_active, signal_len = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2], {in_name_A0: audio[:, :, slice_start: slice_end]})
     for i in range(signal_len[0]):
         if silence:
-            if logits_active[:, i] >= SPEAKING_SCORE:
+            if score_active[:, i] >= SPEAKING_SCORE:
                 silence = False
         else:
-            if logits_silence[:, i] >= SILENCE_SCORE:
+            if score_silence[:, i] >= SILENCE_SCORE:
                 silence = True
         saved.append(silence)
     slice_start += stride_step
@@ -259,4 +259,3 @@ with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
         print(line.replace("\n", ""))
       
 print(f"\nVAD Process Complete.\n\nTime Cost: {end_time - start_time:.3f} Seconds")
-
