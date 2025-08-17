@@ -19,7 +19,6 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
    - Output: Detected speech timestamps  
 
 5. **Resources**:  
-   - [Download Models](https://drive.google.com/drive/folders/1htM4FYpxEQcouHiR2Wyb407EhD1t_0HB?usp=sharing)  
    - [Explore More Projects](https://github.com/DakeQQ?tab=repositories)  
 
 ---
