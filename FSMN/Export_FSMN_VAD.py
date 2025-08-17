@@ -22,7 +22,7 @@ ORT_Accelerate_Providers = []                               # If you have accele
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # Only support static axes.
 INPUT_AUDIO_LENGTH = 8000                                   # The input audio segment length.
-WINDOW_TYPE = 'hann'                                        # Type of window function used in the STFT
+WINDOW_TYPE = 'hamming'                                     # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT_STFT = 512                                             # Number of FFT components for the STFT process, edit it carefully.
 WINDOW_LENGTH = 400                                         # Length of windowing, edit it carefully.
