@@ -56,7 +56,7 @@ Timestamps in Indices:
    - [NVIDIA Frame-VAD Multilingual MarbleNet v2.0](https://huggingface.co/nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0)
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
    - [Silero](https://github.com/snakers4/silero-vad)  (优化了并行计算性能)
-   - [DFSMN](https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k) (重复使用回声消除模型。接收近端和远端音频作为输入。仅输出近端 VAD 结果。)
+   - [DFSMN](https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k) (复用回声消除模型。接收近端和远端音频作为输入。仅输出近端 VAD 结果。)
 
 
 3. **推荐与注意**：  
