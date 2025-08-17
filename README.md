@@ -8,6 +8,7 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
    - [NVIDIA Frame-VAD Multilingual MarbleNet v2.0](https://huggingface.co/nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0)
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
    - [Silero](https://github.com/snakers4/silero-vad)  (Optimized for enhanced parallel computing performance)
+   - [DFSMN](https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k) (Reuse the Acoustic Echo Cancellation model. Accepts Near-End and Far-End audio as inputs.)
 
 3. **Recommendation and Note**:  
    - It is recommended to use the [Audio Denoiser](https://github.com/DakeQQ/Audio-Denoiser-ONNX) for optimal performance in noisy environments.
@@ -54,6 +55,8 @@ Timestamps in Indices:
    - [NVIDIA Frame-VAD Multilingual MarbleNet v2.0](https://huggingface.co/nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0)
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
    - [Silero](https://github.com/snakers4/silero-vad)  (优化了并行计算性能)
+   - [DFSMN](https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k) (重复使用声学回声消除模型。接受近端和远端音频作为输入。)
+
 
 3. **推荐与注意**：  
    - 建议与 [音频降噪器](https://github.com/DakeQQ/Audio-Denoiser-ONNX) 搭配使用，以在嘈杂环境中获得最佳性能。
