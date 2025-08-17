@@ -40,6 +40,7 @@ Timestamps in Indices:
 | Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | FSMN <br> f32  | 0.0047                                         |  
 | Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | Silero <br> f32  | 0.0026                                       |  
 | Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | NVIDIA-VAD <br> f32  | 0.0005 (Chunk Size: 89000)              |  
+| Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | DFSMN-VAD <br> f32  | 0.27 (Chunk Size: 31841)                 |  
 
 ---
 
