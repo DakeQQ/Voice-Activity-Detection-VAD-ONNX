@@ -21,7 +21,7 @@ save_timestamps_indices = "./timestamps_indices.txt"                       # The
 
 DYNAMIC_AXES = False                    # The default dynamic_axes is the input audio length. Note that some providers only support static axes.
 MAX_SIGNAL_LENGTH = 36864 if DYNAMIC_AXES else 200  # Max frames for audio length after STFT processed. Set a appropriate larger value for long audio input, such as 36864.
-INPUT_AUDIO_LENGTH = 31841              # Maximum input audio length: the length of the audio input signal (in samples) is recommended to be greater than 31841. Higher values yield better quality. It is better to set an integer multiple of the NFFT value.
+INPUT_AUDIO_LENGTH = 16001              # Maximum input audio length: the length of the audio input signal (in samples) is recommended to be greater than 31841. Higher values yield better quality. It is better to set an integer multiple of the NFFT value.
 SAMPLE_RATE = 16000                     # The models parameter, do not edit the value.
 MAX_THREADS = 4                         # Number of parallel threads for test audio denoising.
 
