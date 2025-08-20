@@ -5,7 +5,7 @@ import numpy as np
 import onnxruntime
 from pydub import AudioSegment
 
-onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_ONNX/FSMN.onnx"                 # The exported onnx model path.
+onnx_model_A = "/home/DakeQQ/Downloads/FSMN_VAD_Optimized/FSMN.onnx"            # The exported onnx model path.
 test_vad_audio = "./vad_sample.wav"                                             # The test audio path.
 save_timestamps_second = "./timestamps_second.txt"                              # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"                            # The saved path.
