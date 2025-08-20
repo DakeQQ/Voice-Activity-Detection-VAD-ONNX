@@ -520,7 +520,7 @@ print("\nRunning the DFSMN_VAD by ONNX Runtime.")
 start_time = time.time()
 while slice_end <= aligned_len:
     vad_results = ort_session_A.run([out_name_A0], {in_name_A0: audio[:, :, slice_start: slice_end]})[0]
-    for i in range(len(vad_results) - look_backward + 1):
+    for i in range(len(vad_results) - look_backward):
         if silence:
             if vad_results[i] >= SPEAKING_SCORE:
                 activate = 1
