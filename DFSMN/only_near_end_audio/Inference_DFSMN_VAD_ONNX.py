@@ -21,7 +21,7 @@ SAMPLE_RATE = 16000                     # The SDAEC parameter, do not edit the v
 FUSION_THRESHOLD = 0.3                  # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
 MIN_SPEECH_DURATION = 0.2               # A judgment factor used to filter the vad results. Unit: second.
 SPEAKING_SCORE = 0.5                    # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
-SILENCE_SCORE = 0.5                     # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
+SILENCE_SCORE = 0.5                     # A judgment factor used to determine whether the state is silent or not. A smaller value makes it easier to cut off speaking.
 LOOK_BACKWARD = 0.3                     # Utilize future Voice Activity Detection (VAD) results to assess whether the current index indicates silence. Unit: second. Must be an integer multiple of 0.02.
 OUTPUT_FRAME_LENGTH = 320               # The DFSMN_VAD parameter, do not edit the value.
 
