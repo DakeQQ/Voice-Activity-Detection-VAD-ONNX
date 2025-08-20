@@ -21,7 +21,7 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
 DYNAMIC_AXES = False                                        # Only support static axes.
-INPUT_AUDIO_LENGTH = 8000                                   # The input audio segment length.
+INPUT_AUDIO_LENGTH = 16000                                  # The input audio segment length.
 WINDOW_TYPE = 'hamming'                                     # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT_STFT = 512                                             # Number of FFT components for the STFT process, edit it carefully.
@@ -38,7 +38,9 @@ BACKGROUND_NOISE_dB_INIT = 30.0                             # An initial value f
 FUSION_THRESHOLD = 0.3                                      # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
 MIN_SPEECH_DURATION = 0.2                                   # A judgment factor used to filter the vad results. Unit: second.
 SPEAKING_SCORE = 0.5                                        # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
-SILENCE_SCORE = 0.5                                         # A judgment factor used to determine whether the state is silent or not. A larger value makes it easier to cut off speaking.
+SILENCE_SCORE = 0.5                                         # A judgment factor used to determine whether the state is silent or not. A smaller value makes it easier to cut off speaking.
+LOOK_BACKWARD = 0.3                                         # Utilize future Voice Activity Detection (VAD) results to assess whether the current index indicates silence. Unit: second. Must be an integer multiple of 0.02.
+OUTPUT_FRAME_LENGTH = 160                                   # The FSMN_VAD parameter, do not edit the value.
 
 
 STFT_SIGNAL_LENGTH = INPUT_AUDIO_LENGTH // HOP_LENGTH + 1   # The length after STFT processed
@@ -95,9 +97,8 @@ class FSMN_VAD(torch.nn.Module):
         padding = power_dB[-1:].expand((total_frames - power_dB.shape[-1]))
         power_dB = torch.cat((power_dB, padding), dim=-1)
         condition = (score <= one_minus_speech_threshold) & (power_dB >= noise_average_dB)
-        speaking_dB = power_dB[condition]
         noisy_dB = power_dB[~condition].mean()
-        score = speaking_dB.shape[-1] / total_frames
+        score = condition.to(torch.uint8)[:-1]
         return score, cache_0, cache_1, cache_2, cache_3, noisy_dB
 
 
@@ -128,6 +129,7 @@ with torch.inference_mode():
         do_constant_folding=True,
         dynamic_axes={
             'audio': {2: 'audio_len'},
+            'score': {0: 'signal_len'},
         } if DYNAMIC_AXES else None,
         opset_version=17
     )
@@ -185,15 +187,26 @@ def normalize_to_int16(audio):
     return (audio * float(scaling_factor)).astype(np.int16)
 
 
-# # Load the input audio
+# Load the input audio
 print(f"\nTest Input Audio: {test_vad_audio}")
 audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float32)
 audio = normalize_to_int16(audio)
 audio_len = len(audio)
 inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
-INPUT_AUDIO_LENGTH = ort_session_A._inputs_meta[0].shape[-1]
-stride_step = INPUT_AUDIO_LENGTH
+shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
+if isinstance(shape_value_in, str):
+    INPUT_AUDIO_LENGTH = max(16000, audio_len)  # You can adjust it.
+else:
+    INPUT_AUDIO_LENGTH = shape_value_in
+look_backward = int(LOOK_BACKWARD * SAMPLE_RATE // OUTPUT_FRAME_LENGTH)
+stride_step = INPUT_AUDIO_LENGTH - (look_backward + 1) * OUTPUT_FRAME_LENGTH
+if look_backward != 0.0:
+    inv_look_backward = float(1.0 / look_backward)
+else:
+    look_backward = 1
+    inv_look_backward = 1.0
+
 if audio_len > INPUT_AUDIO_LENGTH:
     num_windows = int(np.ceil((audio_len - INPUT_AUDIO_LENGTH) / stride_step)) + 1
     total_length_needed = (num_windows - 1) * stride_step + INPUT_AUDIO_LENGTH
@@ -294,22 +307,58 @@ while slice_end <= aligned_len:
             in_name_A5: one_minus_speech_threshold,
             in_name_A6: noise_average_dB
         })
-    if silence:
-        if score >= SPEAKING_SCORE:
-            silence = False
-    else:
-        if score <= SILENCE_SCORE:
-            silence = True
-    saved.append(silence)
+    for i in range(len(score) - look_backward + 1):
+        if silence:
+            if score[i] != 0:
+                activate = 1
+                for j in range(1, look_backward):
+                    if score[i + j] != 0:
+                        activate += 1
+                activate = activate * inv_look_backward
+                if activate >= SPEAKING_SCORE:
+                    silence = False
+                else:
+                    silence = True
+            else:
+                silence = True
+        else:
+            if score[i] != 1:
+                activate = 1
+                for j in range(1, look_backward):
+                    if score[i + j] != 1:
+                        activate += 1
+                activate = activate * inv_look_backward
+                if activate <= SILENCE_SCORE:
+                    silence = False
+                else:
+                    silence = True
+            else:
+                silence = False
+        saved.append(silence)
+
     if noisy_dB > 0.0:
         noise_average_dB = 0.5 * (noise_average_dB + noisy_dB + SNR_THRESHOLD)
     print(f"Complete: {slice_start * inv_audio_len:.3f}%")
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
+
+for i in range(len(score) - look_backward, len(score)):
+    if silence:
+        if score[i] != 0:
+            silence = False
+        else:
+            silence = True
+    else:
+        if score[i] != 1:
+            silence = True
+        else:
+            silence = False
+    saved.append(silence)
+
 end_time = time.time()
 
 # Generate timestamps.
-timestamps = vad_to_timestamps(saved, INPUT_AUDIO_LENGTH / SAMPLE_RATE)
+timestamps = vad_to_timestamps(saved, OUTPUT_FRAME_LENGTH / SAMPLE_RATE)
 timestamps = process_timestamps(timestamps, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
 print(f"Complete: 100.00%")
 
