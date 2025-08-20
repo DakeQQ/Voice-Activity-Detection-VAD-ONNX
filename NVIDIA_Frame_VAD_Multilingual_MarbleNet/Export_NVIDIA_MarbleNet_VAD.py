@@ -71,7 +71,7 @@ class NVIDIA_VAD(torch.nn.Module):
         encoded, signal_len = self.nvidia_vad.encoder(([mel_features], mel_features.shape[-1].unsqueeze(0)))
         score = torch.softmax(self.nvidia_vad.decoder(encoded.transpose(1, 2)), dim=-1)
         score_silence, score_active = torch.split(score, [1, 1], dim=-1)
-        return score_silence, score_active, signal_len.int()
+        return score_silence, score_active, signal_len.int() - 1
 
 
 print('Export start ...')
