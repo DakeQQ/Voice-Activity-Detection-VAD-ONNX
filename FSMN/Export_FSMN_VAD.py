@@ -195,12 +195,15 @@ audio_len = len(audio)
 inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
+score_len = ort_session_A._outputs_meta[0].shape[-1]
+
 if isinstance(shape_value_in, str):
     INPUT_AUDIO_LENGTH = max(16000, audio_len)  # You can adjust it.
 else:
     INPUT_AUDIO_LENGTH = shape_value_in
 look_backward = int(LOOK_BACKWARD * SAMPLE_RATE // OUTPUT_FRAME_LENGTH)
 stride_step = INPUT_AUDIO_LENGTH - (look_backward + 1) * OUTPUT_FRAME_LENGTH
+slide_range = score_len - look_backward
 if look_backward != 0.0:
     inv_look_backward = float(1.0 / look_backward)
 else:
@@ -293,6 +296,8 @@ noise_average_dB *= 0.1
 SNR_THRESHOLD *= 0.1
 silence = True
 saved = []
+
+
 print("\nRunning the FSMN_VAD by ONNX Runtime.")
 start_time = time.time()
 while slice_end <= aligned_len:
@@ -307,7 +312,7 @@ while slice_end <= aligned_len:
             in_name_A5: one_minus_speech_threshold,
             in_name_A6: noise_average_dB
         })
-    for i in range(len(score) - look_backward):
+    for i in range(slide_range):
         if silence:
             if score[i] != 0:
                 activate = 1
@@ -342,7 +347,7 @@ while slice_end <= aligned_len:
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
 
-for i in range(len(score) - look_backward, len(score)):
+for i in range(slide_range, score_len):
     if silence:
         if score[i] != 0:
             silence = False
