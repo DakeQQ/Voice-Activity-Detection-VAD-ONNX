@@ -98,7 +98,7 @@ class FSMN_VAD(torch.nn.Module):
         power_dB = torch.cat((power_dB, padding), dim=-1)
         condition = (score <= one_minus_speech_threshold) & (power_dB >= noise_average_dB)
         noisy_dB = power_dB[~condition].mean()
-        score = condition.to(torch.uint8)[:-1]
+        score = condition.to(torch.uint8)
         return score, cache_0, cache_1, cache_2, cache_3, noisy_dB
 
 
@@ -307,7 +307,7 @@ while slice_end <= aligned_len:
             in_name_A5: one_minus_speech_threshold,
             in_name_A6: noise_average_dB
         })
-    for i in range(len(score) - look_backward + 1):
+    for i in range(len(score) - look_backward):
         if silence:
             if score[i] != 0:
                 activate = 1
