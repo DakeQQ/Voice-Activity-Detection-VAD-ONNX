@@ -66,7 +66,6 @@ class FSMN_VAD(torch.nn.Module):
         self.T_lfr = lfr_len
         self.cmvn_means = cmvn_means
         self.cmvn_vars = cmvn_vars
-        self.inv_int16 = float(1.0 / 32768.0)
         indices = torch.arange(0, self.T_lfr * lfr_n, lfr_n, dtype=torch.int32).unsqueeze(1) + torch.arange(lfr_m, dtype=torch.int32)
         self.indices_mel = indices.clamp(max=stft_signal_len + self.lfr_m_factor - 1)  # Ensure no out-of-bounds access
         self.indices_audio = torch.arange(nfft_stft, dtype=torch.int32) + torch.arange(0, input_audio_len - nfft_stft + 1, hop_len, dtype=torch.int32).unsqueeze(-1)
@@ -74,7 +73,7 @@ class FSMN_VAD(torch.nn.Module):
         # 2e-5 is reference air_pressure value
 
     def forward(self, audio, cache_0, cache_1, cache_2, cache_3, one_minus_speech_threshold, noise_average_dB):
-        audio = audio.float() * self.inv_int16
+        audio = audio.float()
         audio = audio - torch.mean(audio)  # Remove DC Offset
         if self.pre_emphasis > 0:
             audio = torch.cat([audio[:, :, :1], audio[:, :, 1:] - self.pre_emphasis * audio[:, :, :-1]], dim=-1)
@@ -84,7 +83,7 @@ class FSMN_VAD(torch.nn.Module):
         left_padding = torch.cat([left_padding for _ in range(self.lfr_m_factor)], dim=1)
         padded_inputs = torch.cat((left_padding, mel_features), dim=1)
         mel_features = padded_inputs[:, self.indices_mel].reshape(1, self.T_lfr, -1)
-        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad((mel_features - self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
+        score, cache_0, cache_1, cache_2, cache_3 = self.fsmn_vad((mel_features + self.cmvn_means) * self.cmvn_vars, cache_0, cache_1, cache_2, cache_3)
         if self.speech_2_noise_ratio > 1.0:
             score += torch.pow(score, self.speech_2_noise_ratio)
         elif self.speech_2_noise_ratio < 1.0:
