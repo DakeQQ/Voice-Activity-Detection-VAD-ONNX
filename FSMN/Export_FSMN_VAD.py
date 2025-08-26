@@ -110,7 +110,7 @@ with torch.inference_mode():
         device="cpu"
     )
     CMVN_MEANS = fsmn_vad.kwargs['frontend'].cmvn[0].repeat(1, 1, 1)
-    CMVN_VARS = fsmn_vad.kwargs['frontend'].cmvn[1].repeat(1, 1, 1)
+    CMVN_VARS = (fsmn_vad.kwargs['frontend'].cmvn[1]).repeat(1, 1, 1)
     fsmn_vad = FSMN_VAD(fsmn_vad.model.encoder.eval(), custom_stft, NFFT_STFT, STFT_SIGNAL_LENGTH, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, LFR_M, LFR_N, LFR_LENGTH, SPEECH_2_NOISE_RATIO, INPUT_AUDIO_LENGTH, HOP_LENGTH, CMVN_MEANS, CMVN_VARS)
     audio = torch.ones((1, 1, INPUT_AUDIO_LENGTH), dtype=torch.int16)
     cache_0 = torch.zeros((1, 128, 19, 1), dtype=torch.float32)  # FSMN_VAD model fixed cache shape. Do not edit it.
