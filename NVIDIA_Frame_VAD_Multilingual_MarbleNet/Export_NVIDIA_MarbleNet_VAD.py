@@ -1,5 +1,4 @@
 import gc
-import math
 import time
 import torch
 import site
@@ -77,7 +76,7 @@ class NVIDIA_VAD(torch.nn.Module):
 print('Export start ...')
 with torch.inference_mode():
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT_STFT, hop_len=HOP_LENGTH, win_length=WINDOW_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()  # The max_frames is not the key parameter for STFT, but it is for ISTFT.
-    model = nemo_asr.models.EncDecFrameClassificationModel.from_pretrained(model_name=model_path, strict=False)
+    model = nemo_asr.models.EncDecSpeakerLabelModel.from_pretrained(model_name=model_path, strict=False)
     model = model.to('cpu').float().eval()
     model = NVIDIA_VAD(model, custom_stft, NFFT_STFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE)
     audio = torch.ones((1, 1, INPUT_AUDIO_LENGTH), dtype=torch.int16)
