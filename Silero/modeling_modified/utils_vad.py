@@ -8,16 +8,51 @@ languages = ['ru', 'en', 'de', 'es']
 
 class OnnxWrapper():
 
-    def __init__(self, path, session_opts, providers, provider_options):
+    def __init__(self, path, force_onnx_cpu=True):
         import numpy as np
         global np
         import onnxruntime
 
-        self.session = onnxruntime.InferenceSession(path, providers=providers, sess_options=session_opts, provider_options=provider_options)
-        print(f"\nSilero VAD - Usable Providers: {self.session.get_providers()}")
+        opts = onnxruntime.SessionOptions()
+        opts.inter_op_num_threads = 0
+        opts.intra_op_num_threads = 0
+        opts.enable_cpu_mem_arena = True
+        opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+        opts.add_session_config_entry("session.set_denormal_as_zero", "1")
+        opts.add_session_config_entry("session.intra_op.allow_spinning", "1")
+        opts.add_session_config_entry("session.inter_op.allow_spinning", "1")
+        opts.add_session_config_entry("session.enable_quant_qdq_cleanup", "1")
+        opts.add_session_config_entry("session.qdq_matmulnbits_accuracy_level", "4")
+        opts.add_session_config_entry("optimization.enable_gelu_approximation", "1")
+        opts.add_session_config_entry("optimization.minimal_build_optimizations", "")
+        opts.add_session_config_entry("session.use_device_allocator_for_initializers", "1")
+
+        if force_onnx_cpu and 'CPUExecutionProvider' in onnxruntime.get_available_providers():
+            self.session = onnxruntime.InferenceSession(path, providers=['CPUExecutionProvider'], sess_options=opts)
+        else:
+            providers = onnxruntime.get_available_providers()
+            for provider in providers:
+                try:
+                    print(f"Attempting to create InferenceSession with provider: {provider}")
+                    # Attempt to create the session with the current provider
+                    self.session = onnxruntime.InferenceSession(
+                        path,
+                        sess_options=opts,
+                        providers=[provider]  # Note: providers is a list with one element
+                    )
+                    # If successful, print a success message and break the loop
+                    print(f"Successfully created InferenceSession with {provider}.")
+                    break
+                except Exception as e:
+                    # If an error occurs, print it and the loop will continue to the next provider
+                    print(f"Failed to create InferenceSession with {provider}. Error: {e}")
 
         self.reset_states()
-        self.sample_rates = [8000, 16000]
+        if '16k' in path:
+            warnings.warn('This model support only 16000 sampling rate!')
+            self.sample_rates = [16000]
+        else:
+            self.sample_rates = [8000, 16000]
 
     def _validate_input(self, x, sr: int):
         if x.dim() == 1:
@@ -62,11 +97,11 @@ class OnnxWrapper():
             self.reset_states(batch_size)
 
         if not len(self._context):
-            self._context = torch.zeros(batch_size, context_size, dtype=x.dtype)
+            self._context = torch.zeros(batch_size, context_size)
 
         x = torch.cat([self._context, x], dim=1)
         if sr in [8000, 16000]:
-            ort_inputs = {'input': x.numpy(), 'state': self._state.to(x.dtype).numpy(), 'sr': np.array(sr, dtype='int64')}
+            ort_inputs = {'input': x.numpy(), 'state': self._state.numpy(), 'sr': np.array(sr, dtype='int64')}
             ort_outs = self.session.run(None, ort_inputs)
             out, state = ort_outs
             self._state = torch.from_numpy(state)
@@ -187,10 +222,13 @@ def get_speech_timestamps(audio: torch.Tensor,
                           min_silence_duration_ms: int = 100,
                           speech_pad_ms: int = 30,
                           return_seconds: bool = False,
+                          time_resolution: int = 1,
                           visualize_probs: bool = False,
                           progress_tracking_callback: Callable[[float], None] = None,
                           neg_threshold: float = None,
-                          window_size_samples: int = 512,):
+                          window_size_samples: int = 512,
+                          min_silence_at_max_speech: float = 98,
+                          use_max_poss_sil_at_max_speech: bool = True):
 
     """
     This method is used for splitting long audios into speech chunks using silero VAD
@@ -226,6 +264,9 @@ def get_speech_timestamps(audio: torch.Tensor,
     return_seconds: bool (default - False)
         whether return timestamps in seconds (default - samples)
 
+    time_resolution: bool (default - 1)
+        time resolution of speech coordinates when requested as seconds
+
     visualize_probs: bool (default - False)
         whether draw prob hist or not
 
@@ -235,6 +276,12 @@ def get_speech_timestamps(audio: torch.Tensor,
     neg_threshold: float (default = threshold - 0.15)
         Negative threshold (noise or exit threshold). If model's current state is SPEECH, values BELOW this value are considered as NON-SPEECH.
 
+    min_silence_at_max_speech: float (default - 98ms)
+        Minimum silence duration in ms which is used to avoid abrupt cuts when max_speech_duration_s is reached
+
+    use_max_poss_sil_at_max_speech: bool (default - True)
+        Whether to use the maximum possible silence at max_speech_duration_s or not. If not, the last silence is used.
+
     window_size_samples: int (default - 512 samples)
         !!! DEPRECATED, DOES NOTHING !!!
 
@@ -243,7 +290,6 @@ def get_speech_timestamps(audio: torch.Tensor,
     speeches: list of dicts
         list containing ends and beginnings of speech chunks (samples or seconds based on return_seconds)
     """
-
     if not torch.is_tensor(audio):
         try:
             audio = torch.Tensor(audio)
@@ -268,25 +314,29 @@ def get_speech_timestamps(audio: torch.Tensor,
         raise ValueError("Currently silero VAD models support 8000 and 16000 (or multiply of 16000) sample rates")
 
     window_size_samples = 512 if sampling_rate == 16000 else 256
+    hop_size_samples = int(window_size_samples)
 
     model.reset_states()
     min_speech_samples = sampling_rate * min_speech_duration_ms / 1000
     speech_pad_samples = sampling_rate * speech_pad_ms / 1000
     max_speech_samples = sampling_rate * max_speech_duration_s - window_size_samples - 2 * speech_pad_samples
     min_silence_samples = sampling_rate * min_silence_duration_ms / 1000
-    min_silence_samples_at_max_speech = sampling_rate * 98 / 1000
+    min_silence_samples_at_max_speech = sampling_rate * min_silence_at_max_speech / 1000
 
     audio_length_samples = len(audio)
 
     speech_probs = []
-    for current_start_sample in range(0, audio_length_samples, window_size_samples):
+    for current_start_sample in range(0, audio_length_samples, hop_size_samples):
         chunk = audio[current_start_sample: current_start_sample + window_size_samples]
         if len(chunk) < window_size_samples:
             chunk = torch.nn.functional.pad(chunk, (0, int(window_size_samples - len(chunk))))
-        speech_prob = model(chunk, sampling_rate).item()
+        try:
+            speech_prob = model(chunk, sampling_rate).item()
+        except Exception as e:
+            import ipdb; ipdb.set_trace()
         speech_probs.append(speech_prob)
         # caculate progress and seng it to callback function
-        progress = current_start_sample + window_size_samples
+        progress = current_start_sample + hop_size_samples
         if progress > audio_length_samples:
             progress = audio_length_samples
         progress_percent = (progress / audio_length_samples) * 100
@@ -298,45 +348,59 @@ def get_speech_timestamps(audio: torch.Tensor,
     current_speech = {}
 
     if neg_threshold is None:
-        neg_threshold = threshold - 0.15
+        neg_threshold = max(threshold - 0.15, 0.01)
     temp_end = 0  # to save potential segment end (and tolerate some silence)
     prev_end = next_start = 0  # to save potential segment limits in case of maximum segment size reached
+    possible_ends = []
 
     for i, speech_prob in enumerate(speech_probs):
         if (speech_prob >= threshold) and temp_end:
-            temp_end = 0
+            if temp_end != 0:
+                sil_dur = (hop_size_samples * i) - temp_end
+                if sil_dur > min_silence_samples_at_max_speech:
+                    possible_ends.append((temp_end, sil_dur))
+                temp_end = 0
             if next_start < prev_end:
-                next_start = window_size_samples * i
+                next_start = hop_size_samples * i
 
         if (speech_prob >= threshold) and not triggered:
             triggered = True
-            current_speech['start'] = window_size_samples * i
+            current_speech['start'] = hop_size_samples * i
             continue
 
-        if triggered and (window_size_samples * i) - current_speech['start'] > max_speech_samples:
-            if prev_end:
+        if triggered and (hop_size_samples * i) - current_speech['start'] > max_speech_samples:
+            if possible_ends:
+                if use_max_poss_sil_at_max_speech:
+                    prev_end, dur = max(possible_ends, key=lambda x: x[1])  # use the longest possible silence segment in the current speech chunk
+                else:
+                    prev_end, dur = possible_ends[-1]   # use the last possible silence segement
                 current_speech['end'] = prev_end
                 speeches.append(current_speech)
                 current_speech = {}
-                if next_start < prev_end:  # previously reached silence (< neg_thres) and is still not speech (< thres)
-                    triggered = False
-                else:
+                next_start = prev_end + dur
+                if next_start < prev_end + hop_size_samples * i:  # previously reached silence (< neg_thres) and is still not speech (< thres)
+                    #triggered = False
                     current_speech['start'] = next_start
+                else:
+                    triggered = False
+                    #current_speech['start'] = next_start
                 prev_end = next_start = temp_end = 0
+                possible_ends = []
             else:
-                current_speech['end'] = window_size_samples * i
+                current_speech['end'] = hop_size_samples * i
                 speeches.append(current_speech)
                 current_speech = {}
                 prev_end = next_start = temp_end = 0
                 triggered = False
+                possible_ends = []
                 continue
 
         if (speech_prob < neg_threshold) and triggered:
             if not temp_end:
-                temp_end = window_size_samples * i
-            if ((window_size_samples * i) - temp_end) > min_silence_samples_at_max_speech:  # condition to avoid cutting in very short silence
-                prev_end = temp_end
-            if (window_size_samples * i) - temp_end < min_silence_samples:
+                temp_end = hop_size_samples * i
+            # if ((hop_size_samples * i) - temp_end) > min_silence_samples_at_max_speech:  # condition to avoid cutting in very short silence
+            #     prev_end = temp_end
+            if (hop_size_samples * i) - temp_end < min_silence_samples:
                 continue
             else:
                 current_speech['end'] = temp_end
@@ -345,6 +409,7 @@ def get_speech_timestamps(audio: torch.Tensor,
                 current_speech = {}
                 prev_end = next_start = temp_end = 0
                 triggered = False
+                possible_ends = []
                 continue
 
     if current_speech and (audio_length_samples - current_speech['start']) > min_speech_samples:
@@ -366,16 +431,17 @@ def get_speech_timestamps(audio: torch.Tensor,
             speech['end'] = int(min(audio_length_samples, speech['end'] + speech_pad_samples))
 
     if return_seconds:
+        audio_length_seconds = audio_length_samples / sampling_rate
         for speech_dict in speeches:
-            speech_dict['start'] = round(speech_dict['start'] / sampling_rate, 1)
-            speech_dict['end'] = round(speech_dict['end'] / sampling_rate, 1)
+            speech_dict['start'] = max(round(speech_dict['start'] / sampling_rate, time_resolution), 0)
+            speech_dict['end'] = min(round(speech_dict['end'] / sampling_rate, time_resolution), audio_length_seconds)
     elif step > 1:
         for speech_dict in speeches:
             speech_dict['start'] *= step
             speech_dict['end'] *= step
 
     if visualize_probs:
-        make_visualization(speech_probs, window_size_samples / sampling_rate)
+        make_visualization(speech_probs, hop_size_samples / sampling_rate)
 
     return speeches
 
@@ -429,13 +495,16 @@ class VADIterator:
         self.current_sample = 0
 
     @torch.no_grad()
-    def __call__(self, x, return_seconds=False):
+    def __call__(self, x, return_seconds=False, time_resolution: int = 1):
         """
         x: torch.Tensor
             audio chunk (see examples in repo)
 
         return_seconds: bool (default - False)
             whether return timestamps in seconds (default - samples)
+
+        time_resolution: int (default - 1)
+            time resolution of speech coordinates when requested as seconds
         """
 
         if not torch.is_tensor(x):
@@ -455,7 +524,7 @@ class VADIterator:
         if (speech_prob >= self.threshold) and not self.triggered:
             self.triggered = True
             speech_start = max(0, self.current_sample - self.speech_pad_samples - window_size_samples)
-            return {'start': int(speech_start) if not return_seconds else round(speech_start / self.sampling_rate, 1)}
+            return {'start': int(speech_start) if not return_seconds else round(speech_start / self.sampling_rate, time_resolution)}
 
         if (speech_prob < self.threshold - 0.15) and self.triggered:
             if not self.temp_end:
@@ -466,24 +535,110 @@ class VADIterator:
                 speech_end = self.temp_end + self.speech_pad_samples - window_size_samples
                 self.temp_end = 0
                 self.triggered = False
-                return {'end': int(speech_end) if not return_seconds else round(speech_end / self.sampling_rate, 1)}
+                return {'end': int(speech_end) if not return_seconds else round(speech_end / self.sampling_rate, time_resolution)}
 
         return None
 
 
 def collect_chunks(tss: List[dict],
-                   wav: torch.Tensor):
-    chunks = []
-    for i in tss:
-        chunks.append(wav[i['start']: i['end']])
+                   wav: torch.Tensor,
+                   seconds: bool = False,
+                   sampling_rate: int = None) -> torch.Tensor:
+    """Collect audio chunks from a longer audio clip
+
+    This method extracts audio chunks from an audio clip, using a list of
+    provided coordinates, and concatenates them together. Coordinates can be
+    passed either as sample numbers or in seconds, in which case the audio
+    sampling rate is also needed.
+
+    Parameters
+    ----------
+    tss: List[dict]
+        Coordinate list of the clips to collect from the audio.
+    wav: torch.Tensor, one dimensional
+        One dimensional float torch.Tensor, containing the audio to clip.
+    seconds: bool (default - False)
+        Whether input coordinates are passed as seconds or samples.
+    sampling_rate: int (default - None)
+        Input audio sampling rate. Required if seconds is True.
+
+    Returns
+    -------
+    torch.Tensor, one dimensional
+        One dimensional float torch.Tensor of the concatenated clipped audio
+        chunks.
+
+    Raises
+    ------
+    ValueError
+        Raised if sampling_rate is not provided when seconds is True.
+
+    """
+    if seconds and not sampling_rate:
+        raise ValueError('sampling_rate must be provided when seconds is True')
+
+    chunks = list()
+    _tss = _seconds_to_samples_tss(tss, sampling_rate) if seconds else tss
+
+    for i in _tss:
+        chunks.append(wav[i['start']:i['end']])
+
     return torch.cat(chunks)
 
 
 def drop_chunks(tss: List[dict],
-                wav: torch.Tensor):
-    chunks = []
+                wav: torch.Tensor,
+                seconds: bool = False,
+                sampling_rate: int = None) -> torch.Tensor:
+    """Drop audio chunks from a longer audio clip
+
+    This method extracts audio chunks from an audio clip, using a list of
+    provided coordinates, and drops them. Coordinates can be passed either as
+    sample numbers or in seconds, in which case the audio sampling rate is also
+    needed.
+
+    Parameters
+    ----------
+    tss: List[dict]
+        Coordinate list of the clips to drop from from the audio.
+    wav: torch.Tensor, one dimensional
+        One dimensional float torch.Tensor, containing the audio to clip.
+    seconds: bool (default - False)
+        Whether input coordinates are passed as seconds or samples.
+    sampling_rate: int (default - None)
+        Input audio sampling rate. Required if seconds is True.
+
+    Returns
+    -------
+    torch.Tensor, one dimensional
+        One dimensional float torch.Tensor of the input audio minus the dropped
+        chunks.
+
+    Raises
+    ------
+    ValueError
+        Raised if sampling_rate is not provided when seconds is True.
+
+    """
+    if seconds and not sampling_rate:
+        raise ValueError('sampling_rate must be provided when seconds is True')
+
+    chunks = list()
     cur_start = 0
-    for i in tss:
+
+    _tss = _seconds_to_samples_tss(tss, sampling_rate) if seconds else tss
+
+    for i in _tss:
         chunks.append((wav[cur_start: i['start']]))
         cur_start = i['end']
+
     return torch.cat(chunks)
+
+
+def _seconds_to_samples_tss(tss: List[dict], sampling_rate: int) -> List[dict]:
+    """Convert coordinates expressed in seconds to sample coordinates.
+    """
+    return [{
+        'start': round(crd['start']) * sampling_rate,
+        'end': round(crd['end']) * sampling_rate
+    } for crd in tss]
