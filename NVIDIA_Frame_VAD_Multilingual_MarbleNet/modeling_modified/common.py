@@ -14,6 +14,8 @@
 
 
 """Interfaces common to all Neural Modules and Models."""
+from __future__ import annotations
+
 import copy
 import hashlib
 import inspect
@@ -21,19 +23,20 @@ import os
 import shutil
 import traceback
 from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import hydra
 import torch
 import wrapt
-from huggingface_hub import HfApi
+from huggingface_hub import _CACHED_NO_EXIST, HfApi
 from huggingface_hub import get_token as get_hf_token
-from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub import hf_hub_download, snapshot_download, try_to_load_from_cache
 from omegaconf import DictConfig, OmegaConf
 
 import nemo
@@ -52,6 +55,58 @@ _TYPECHECK_ENABLED = True
 _TYPECHECK_SEMANTIC_CHECK_ENABLED = True
 # TODO @blisc: Remove _HAS_HYDRA
 _HAS_HYDRA = True
+
+
+# Added these for now but these should be updated based on collections
+ALLOWED_TARGET_PREFIXES = [
+    "nemo.collections.",
+    "nemo.core.",
+    "nemo.utils.",
+    "nemo.lightning.",
+    "tests.collections.",
+    "torch.nn.",
+    "torch.optim.",
+    "torch.utils.data.",
+    "lightning.pytorch.callbacks.",
+    "lightning.pytorch.loggers.",
+    "lightning.pytorch.strategies.",
+    "lightning.pytorch.accelerators.",
+    "omegaconf.",
+    "megatron.",
+]
+
+
+def _is_target_allowed(target_path: str) -> bool:
+    if not isinstance(target_path, str):
+        return False
+    return any(target_path.startswith(prefix) for prefix in ALLOWED_TARGET_PREFIXES)
+
+
+def _validate_config_targets_recursive(config_node: Any):
+    if isinstance(config_node, Mapping):  # Handles DictConfig and dict
+        if "_target_" in config_node:
+            target_path = config_node["_target_"]
+            if not _is_target_allowed(target_path):
+                raise ValueError(
+                    f"Instantiation of unsafe target '{target_path}' is blocked. "
+                    f"The '_target_' must point to a class or function within an approved namespace. "
+                    f"This restriction is in place to prevent potential arbitrary code execution."
+                )
+        for key, value in config_node.items():
+            _validate_config_targets_recursive(value)
+    elif isinstance(config_node, Sequence) and not isinstance(config_node, str):  # Handles ListConfig and list
+        for item in config_node:
+            _validate_config_targets_recursive(item)
+
+
+def safe_instantiate(config: DictConfig, *args, **kwargs):
+    """
+    A wrapper around hydra.utils.instantiate that first validates all _target_
+    fields in the config against an allow-list of prefixes.
+    """
+    if config is not None:
+        _validate_config_targets_recursive(config)
+    return hydra.utils.instantiate(config, *args, **kwargs)
 
 
 def is_typecheck_enabled():
@@ -484,21 +539,21 @@ class Serialization(ABC):
         # Hydra 0.x API
         if ('cls' in config or 'target' in config) and 'params' in config and _HAS_HYDRA:
             # regular hydra-based instantiation
-            instance = hydra.utils.instantiate(config=config)
+            instance = safe_instantiate(config=config)
         # Hydra 1.x API
         elif '_target_' in config and _HAS_HYDRA:
             # regular hydra-based instantiation
-            instance = hydra.utils.instantiate(config=config)
+            instance = safe_instantiate(config=config)
         else:
             instance = None
             prev_error = ""
             # Attempt class path resolution from config `target` class (if it exists)
             if 'target' in config:
-                target_cls = config["target"]  # No guarantee that this is a omegaconf class
+                target_cls_path = config["target"]  # No guarantee that this is a omegaconf class
                 imported_cls = None
                 try:
                     # try to import the target class
-                    imported_cls = import_class_by_path(target_cls)
+                    imported_cls = import_class_by_path(target_cls_path)
                     # if calling class (cls) is subclass of imported class,
                     # use subclass instead
                     if issubclass(cls, imported_cls):
@@ -511,7 +566,9 @@ class Serialization(ABC):
                 except Exception as e:
                     # record previous error
                     tb = traceback.format_exc()
-                    prev_error = f"Model instantiation failed!\nTarget class:\t{target_cls}" f"\nError(s):\t{e}\n{tb}"
+                    prev_error = (
+                        f"Model instantiation failed!\nTarget class:\t{target_cls_path}" f"\nError(s):\t{e}\n{tb}"
+                    )
                     logging.debug(prev_error + "\nFalling back to `cls`.")
 
             # target class resolution was unsuccessful, fall back to current `cls`
@@ -685,8 +742,8 @@ class Model(Typing, Serialization, FileIO, HuggingFaceFileIO):
     def list_available_models(cls) -> Optional[List[PretrainedModelInfo]]:
         """
         Should list all pre-trained models available via NVIDIA NGC cloud.
-        Note: There is no check that requires model names and aliases to be unique. In the case of a collision, whatever
-        model (or alias) is listed first in the this returned list will be instantiated.
+        Note: There is no check that requires model names and aliases to be unique. In the case of a collision,
+        whatever model (or alias) is listed first in the this returned list will be instantiated.
 
         Returns:
             A list of PretrainedModelInfo entries
@@ -740,30 +797,30 @@ class Model(Typing, Serialization, FileIO, HuggingFaceFileIO):
         """
         # if save_restore_connector is None:
         #     save_restore_connector = SaveRestoreConnector()
-        #
+        # 
         # # Resolve if the pretrained model name is from NGC or other sources
         # # HF Hub source
         # if '/' in model_name:
         #     class_, nemo_model_file_in_cache = cls._get_hf_hub_pretrained_model_info(
         #         model_name=model_name, refresh_cache=refresh_cache
         #     )
-        #
+        # 
         #     # Check if nemo_model_file_in_cache is a directory
         #     if os.path.isdir(nemo_model_file_in_cache):
         #         # Update SaveRestoreConnector with the flag to read from an unpacked NeMo folder
         #         save_restore_connector.model_extracted_dir = nemo_model_file_in_cache
-        #
+        # 
         # else:
         #     # NGC source
         #     class_, nemo_model_file_in_cache = cls._get_ngc_pretrained_model_info(
         #         model_name=model_name, refresh_cache=refresh_cache
         #     )
-        #
+        # 
         # if return_model_file:
         #     return nemo_model_file_in_cache
         class_, nemo_model_file_in_cache = cls._get_hf_hub_pretrained_model_info(
-                    model_name=model_name, refresh_cache=refresh_cache
-                )
+            model_name=model_name, refresh_cache=refresh_cache
+        )
         instance = class_.restore_from(
             restore_path=nemo_model_file_in_cache,
             override_config_path=override_config_path,
@@ -813,7 +870,8 @@ class Model(Typing, Serialization, FileIO, HuggingFaceFileIO):
 
         if location_in_the_cloud is None:
             raise FileNotFoundError(
-                f"Model {model_name} was not found. Check cls.list_available_models() for the list of all available models."
+                f"Model {model_name} was not found. Check cls.list_available_models()\n"
+                f"for the list of all available models."
             )
         filename = location_in_the_cloud.split("/")[-1]
         url = location_in_the_cloud.replace(filename, "")
@@ -852,18 +910,24 @@ class Model(Typing, Serialization, FileIO, HuggingFaceFileIO):
                 the calling class. Depend on target class resolution by restore_from() for calling the correct class.
             -   The path to the NeMo model (.nemo file) in some cached directory (managed by HF Hub).
         """
-        # Resolve the model name without origin for filename
+        # # Resolve the model name without origin for filename
         # resolved_model_filename = model_name.split("/")[-1] + '.nemo'
-
-        # Check if api token exists, use if it does
+        #
+        # # Try to take from cache first - if not fallback to options below
+        # if not refresh_cache:
+        #     path = try_to_load_from_cache(repo_id=model_name, filename=resolved_model_filename)
+        #     if path is not None and path is not _CACHED_NO_EXIST:
+        #         return cls, path
+        #
+        # # Check if api token exists, use if it does
         # hf_token = get_hf_token()
-
-        # First check if .nemo file exists in HF
+        #
+        # # First check if .nemo file exists in HF
         # api = HfApi(token=hf_token)
-
-        # Check if model exists in HF
+        #
+        # # Check if model exists in HF
         # nemo_file_exists = api.file_exists(repo_id=model_name, filename=resolved_model_filename, repo_type="model")
-
+        #
         # if nemo_file_exists:
         #     # Try to load the model from the Huggingface Hub
         #     path = hf_hub_download(
@@ -919,11 +983,7 @@ class Model(Typing, Serialization, FileIO, HuggingFaceFileIO):
         #         local_dir_use_symlinks=False,
         #         token=hf_token,
         #     )
-
-        # Cannot pre-resolve the specific class without double instantiation (first for config, second for model params)
-        # Default to current class, and perform basic class path resolution (handled via restore_from() + target class)
         class_ = cls
-
         return class_, model_name
 
     def generate_model_card(
@@ -1069,14 +1129,14 @@ class typecheck:
             output_types = instance.output_types
 
         # If types are not defined, skip type checks and just call the wrapped method
-        if input_types is None and output_types is None:
-            return wrapped(*args, **kwargs)
-
-        # Check that all arguments are kwargs
+        # if input_types is None and output_types is None:
+        #     return wrapped(*args, **kwargs)
+        # 
+        # # Check that all arguments are kwargs
         # if input_types is not None and len(args) > 0:
         #     raise TypeError("All arguments must be passed by kwargs only for typed methods")
-
-        # Perform rudimentary input checks here
+        # 
+        # # Perform rudimentary input checks here
         # instance._validate_input_types(input_types=input_types, ignore_collections=self.ignore_collections, **kwargs)
 
         # Call the method - this can be forward, or any other callable method
