@@ -17,6 +17,7 @@ save_timestamps_second = "./timestamps_second.txt"             # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"           # The saved path.
 
 
+use_cpu = True
 quant_to_fp16 = False                                # If true, the transformers.optimizer will remain the FP16 processes.
 ACTIVATE_THRESHOLD = 0.5                             # Set for silero_vad, none-silence state threshold.
 FUSION_THRESHOLD = 0.3                               # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
@@ -139,7 +140,7 @@ slim(
 
 
 # Load the Silero
-silero_vad = load_silero_vad(onnx=True, use_cpu=True)
+silero_vad = load_silero_vad(onnx=True, use_cpu=use_cpu)
 
 
 # Load the audio
