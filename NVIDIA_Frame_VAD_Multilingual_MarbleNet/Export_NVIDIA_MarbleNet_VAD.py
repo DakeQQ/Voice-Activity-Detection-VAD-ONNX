@@ -19,10 +19,10 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
-DYNAMIC_AXES = True                                         # Only support static axes.
+DYNAMIC_AXES = True                                         # The default dynamic axis is input audio length.
 SAMPLE_RATE = 16000                                         # The model parameter, do not edit the value.
 OUTPUT_FRAME_LENGTH = 320                                   # The model parameter, do not edit it.
-INPUT_AUDIO_LENGTH = SAMPLE_RATE * 3600                     # The max length of input audio segment. The '3600' means 3600 seconds.
+INPUT_AUDIO_LENGTH = 160000                                 # The max length of input audio segment. For DYNAMIC_AXES=False.
 WINDOW_TYPE = 'hann'                                        # Type of window function used in the STFT
 N_MELS = 80                                                 # Number of Mel bands to generate in the Mel-spectrogram. Do not edit it.
 NFFT_STFT = 512                                             # Number of FFT components for the STFT process, edit it carefully.
@@ -33,11 +33,6 @@ FUSION_THRESHOLD = 0.1                                      # A judgment factor 
 MIN_SPEECH_DURATION = 0.05                                  # A judgment factor used to filter the vad results. Unit: second.
 SPEAKING_SCORE = 0.5                                        # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
 SILENCE_SCORE = 0.5                                         # A judgment factor used to determine whether the state is silent or not. A smaller value makes it easier to cut off speaking.
-
-
-STFT_SIGNAL_LENGTH = INPUT_AUDIO_LENGTH // HOP_LENGTH + 1   # The length after STFT processed
-if HOP_LENGTH > INPUT_AUDIO_LENGTH:
-    HOP_LENGTH = INPUT_AUDIO_LENGTH
 
 
 shutil.copyfile('./modeling_modified/common.py', site.getsitepackages()[-1] + "/nemo/core/classes/common.py")
