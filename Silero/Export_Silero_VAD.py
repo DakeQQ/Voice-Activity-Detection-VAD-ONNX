@@ -20,10 +20,10 @@ save_timestamps_indices = "./timestamps_indices.txt"           # The saved path.
 use_cpu = True
 quant_to_fp16 = False                                # If true, the transformers.optimizer will remain the FP16 processes.
 ACTIVATE_THRESHOLD = 0.5                             # Set for silero_vad, none-silence state threshold.
-FUSION_THRESHOLD = 0.3                               # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
-MIN_SPEECH_DURATION = 0.25                           # A judgment factor used to filter the vad results. Unit: second.
+FUSION_THRESHOLD = 0.2                               # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
+MIN_SPEECH_DURATION = 0.1                            # A judgment factor used to filter the vad results. Unit: second.
 MAX_SPEECH_DURATION = 20                             # Set for silero_vad, maximum silence duration time. Unit: second.
-MIN_SILENCE_DURATION = 250                           # Set for silero_vad, minimum silence duration time. Unit: ms.
+MIN_SILENCE_DURATION = 1000                          # Set for silero_vad, minimum silence duration time. Unit: ms.
 SAMPLE_RATE = 16000                                  # Silero VAD accept the audio with 8kHz or 16kHz.
 upgrade_opset = 18                                   # Upgrade the onnx model opset. Set 0 for disable.
 
