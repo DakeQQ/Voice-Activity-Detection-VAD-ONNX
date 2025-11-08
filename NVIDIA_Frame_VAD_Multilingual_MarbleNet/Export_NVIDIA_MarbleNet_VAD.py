@@ -87,7 +87,8 @@ with torch.inference_mode():
             'score_active': {1: 'signal_len'},
             'score_silence': {1: 'signal_len'}
         } if DYNAMIC_AXES else None,
-        opset_version=17
+        opset_version=17,
+        dynamo=False
     )
     del model
     del audio
