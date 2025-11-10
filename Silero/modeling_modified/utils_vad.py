@@ -2,11 +2,12 @@ import torch
 import torchaudio
 from typing import Callable, List
 import warnings
+from packaging import version
 
 languages = ['ru', 'en', 'de', 'es']
 
 
-class OnnxWrapper():
+class OnnxWrapper:
 
     def __init__(self, path, force_onnx_cpu=True):
         import numpy as np
@@ -14,21 +15,31 @@ class OnnxWrapper():
         import onnxruntime
 
         opts = onnxruntime.SessionOptions()
-        opts.inter_op_num_threads = 0
-        opts.intra_op_num_threads = 0
-        opts.enable_cpu_mem_arena = True
+        run_options = onnxruntime.RunOptions()
+        opts.log_severity_level = 4  # Fatal level, it an adjustable value.
+        opts.log_verbosity_level = 4  # Fatal level, it an adjustable value.
+        run_options.log_severity_level = 4  # Fatal level, it an adjustable value.
+        run_options.log_verbosity_level = 4  # Fatal level, it an adjustable value.
+        opts.inter_op_num_threads = 0  # Run different nodes with num_threads. Set 0 for auto.
+        opts.intra_op_num_threads = 0  # Under the node, execute the operators with num_threads. Set 0 for auto.
+        opts.enable_cpu_mem_arena = True  # True for execute speed; False for less memory usage.
+        opts.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
         opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-        opts.add_session_config_entry("session.set_denormal_as_zero", "1")
-        opts.add_session_config_entry("session.intra_op.allow_spinning", "1")
-        opts.add_session_config_entry("session.inter_op.allow_spinning", "1")
-        opts.add_session_config_entry("session.enable_quant_qdq_cleanup", "1")
-        opts.add_session_config_entry("session.qdq_matmulnbits_accuracy_level", "4")
-        opts.add_session_config_entry("optimization.enable_gelu_approximation", "1")
-        opts.add_session_config_entry("optimization.minimal_build_optimizations", "")
-        opts.add_session_config_entry("session.use_device_allocator_for_initializers", "1")
+        opts.add_session_config_entry('session.set_denormal_as_zero', '1')
+        opts.add_session_config_entry('session.intra_op.allow_spinning', '1')
+        opts.add_session_config_entry('session.inter_op.allow_spinning', '1')
+        opts.add_session_config_entry('session.enable_quant_qdq_cleanup', '1')
+        opts.add_session_config_entry('session.qdq_matmulnbits_accuracy_level', '4')
+        opts.add_session_config_entry('optimization.enable_gelu_approximation', '1')
+        opts.add_session_config_entry('optimization.minimal_build_optimizations', '')
+        opts.add_session_config_entry('session.use_device_allocator_for_initializers', '1')
+        opts.add_session_config_entry('optimization.enable_cast_chain_elimination', '1')
+        opts.add_session_config_entry('session.graph_optimizations_loop_level', '2')
+
+        run_options.add_run_config_entry('disable_synchronize_execution_providers', '1')
 
         if force_onnx_cpu and 'CPUExecutionProvider' in onnxruntime.get_available_providers():
-            self.session = onnxruntime.InferenceSession(path, providers=['CPUExecutionProvider'], sess_options=opts)
+            self.session = onnxruntime.InferenceSession(path, providers=['CPUExecutionProvider'], sess_options=opts, run_options=run_options)
         else:
             providers = onnxruntime.get_available_providers()
             for provider in providers:
@@ -38,7 +49,8 @@ class OnnxWrapper():
                     self.session = onnxruntime.InferenceSession(
                         path,
                         sess_options=opts,
-                        providers=[provider]  # Note: providers is a list with one element
+                        providers=[provider],  # Note: providers is a list with one element
+                        run_options=run_options
                     )
                     # If successful, print a success message and break the loop
                     print(f"Successfully created InferenceSession with {provider}.")
@@ -159,40 +171,60 @@ class Validator():
         return outs
 
 
-def read_audio(path: str,
-               sampling_rate: int = 16000):
-    list_backends = torchaudio.list_audio_backends()
+def read_audio(path: str, sampling_rate: int = 16000) -> torch.Tensor:
+    ta_ver = version.parse(torchaudio.__version__)
+    if ta_ver < version.parse("2.9"):
+        try:
+            effects = [['channels', '1'],['rate', str(sampling_rate)]]
+            wav, sr = torchaudio.sox_effects.apply_effects_file(path, effects=effects)
+        except:
+            wav, sr = torchaudio.load(path)
+    else:
+        try:
+            wav, sr = torchaudio.load(path)
+        except:
+            try:
+                from torchcodec.decoders import AudioDecoder
+                samples = AudioDecoder(path).get_all_samples()
+                wav = samples.data
+                sr = samples.sample_rate
+            except ImportError:
+                raise RuntimeError(
+                    f"torchaudio version {torchaudio.__version__} requires torchcodec for audio I/O. "
+                    + "Install torchcodec or pin torchaudio < 2.9"
+                )
 
-    assert len(list_backends) > 0, 'The list of available backends is empty, please install backend manually. \
-                                    \n Recommendations: \n \tSox (UNIX OS) \n \tSoundfile (Windows OS, UNIX OS) \n \tffmpeg (Windows OS, UNIX OS)'
+    if wav.ndim > 1 and wav.size(0) > 1:
+        wav = wav.mean(dim=0, keepdim=True)
 
-    try:
-        effects = [
-            ['channels', '1'],
-            ['rate', str(sampling_rate)]
-        ]
+    if sr != sampling_rate:
+        wav = torchaudio.transforms.Resample(sr, sampling_rate)(wav)
 
-        wav, sr = torchaudio.sox_effects.apply_effects_file(path, effects=effects)
-    except:
-        wav, sr = torchaudio.load(path)
-
-        if wav.size(0) > 1:
-            wav = wav.mean(dim=0, keepdim=True)
-
-        if sr != sampling_rate:
-            transform = torchaudio.transforms.Resample(orig_freq=sr,
-                                                       new_freq=sampling_rate)
-            wav = transform(wav)
-            sr = sampling_rate
-
-    assert sr == sampling_rate
     return wav.squeeze(0)
 
 
-def save_audio(path: str,
-               tensor: torch.Tensor,
-               sampling_rate: int = 16000):
-    torchaudio.save(path, tensor.unsqueeze(0), sampling_rate, bits_per_sample=16)
+def save_audio(path: str, tensor: torch.Tensor, sampling_rate: int = 16000):
+    tensor = tensor.detach().cpu()
+    if tensor.ndim == 1:
+        tensor = tensor.unsqueeze(0)
+
+    ta_ver = version.parse(torchaudio.__version__)
+
+    try:
+        torchaudio.save(path, tensor, sampling_rate, bits_per_sample=16)
+    except Exception:
+        if ta_ver >= version.parse("2.9"):
+            try:
+                from torchcodec.encoders import AudioEncoder
+                encoder = AudioEncoder(tensor, sample_rate=16000)
+                encoder.to_file(path)
+            except ImportError:
+                raise RuntimeError(
+                    f"torchaudio version {torchaudio.__version__} requires torchcodec for saving. "
+                    + "Install torchcodec or pin torchaudio < 2.9"
+                )
+        else:
+            raise
 
 
 def init_jit_model(model_path: str,
@@ -227,7 +259,7 @@ def get_speech_timestamps(audio: torch.Tensor,
                           progress_tracking_callback: Callable[[float], None] = None,
                           neg_threshold: float = None,
                           window_size_samples: int = 512,
-                          min_silence_at_max_speech: float = 98,
+                          min_silence_at_max_speech: int = 98,
                           use_max_poss_sil_at_max_speech: bool = True):
 
     """
@@ -252,7 +284,7 @@ def get_speech_timestamps(audio: torch.Tensor,
 
     max_speech_duration_s: int (default -  inf)
         Maximum duration of speech chunks in seconds
-        Chunks longer than max_speech_duration_s will be split at the timestamp of the last silence that lasts more than 100ms (if any), to prevent agressive cutting.
+        Chunks longer than max_speech_duration_s will be split at the timestamp of the last silence that lasts more than 100ms (if any), to prevent aggressive cutting.
         Otherwise, they will be split aggressively just before max_speech_duration_s.
 
     min_silence_duration_ms: int (default - 100 milliseconds)
@@ -276,7 +308,7 @@ def get_speech_timestamps(audio: torch.Tensor,
     neg_threshold: float (default = threshold - 0.15)
         Negative threshold (noise or exit threshold). If model's current state is SPEECH, values BELOW this value are considered as NON-SPEECH.
 
-    min_silence_at_max_speech: float (default - 98ms)
+    min_silence_at_max_speech: int (default - 98ms)
         Minimum silence duration in ms which is used to avoid abrupt cuts when max_speech_duration_s is reached
 
     use_max_poss_sil_at_max_speech: bool (default - True)
@@ -314,7 +346,6 @@ def get_speech_timestamps(audio: torch.Tensor,
         raise ValueError("Currently silero VAD models support 8000 and 16000 (or multiply of 16000) sample rates")
 
     window_size_samples = 512 if sampling_rate == 16000 else 256
-    hop_size_samples = int(window_size_samples)
 
     model.reset_states()
     min_speech_samples = sampling_rate * min_speech_duration_ms / 1000
@@ -326,17 +357,14 @@ def get_speech_timestamps(audio: torch.Tensor,
     audio_length_samples = len(audio)
 
     speech_probs = []
-    for current_start_sample in range(0, audio_length_samples, hop_size_samples):
+    for current_start_sample in range(0, audio_length_samples, window_size_samples):
         chunk = audio[current_start_sample: current_start_sample + window_size_samples]
         if len(chunk) < window_size_samples:
             chunk = torch.nn.functional.pad(chunk, (0, int(window_size_samples - len(chunk))))
-        try:
-            speech_prob = model(chunk, sampling_rate).item()
-        except Exception as e:
-            import ipdb; ipdb.set_trace()
+        speech_prob = model(chunk, sampling_rate).item()
         speech_probs.append(speech_prob)
-        # caculate progress and seng it to callback function
-        progress = current_start_sample + hop_size_samples
+        # calculate progress and send it to callback function
+        progress = current_start_sample + window_size_samples
         if progress > audio_length_samples:
             progress = audio_length_samples
         progress_percent = (progress / audio_length_samples) * 100
@@ -354,53 +382,70 @@ def get_speech_timestamps(audio: torch.Tensor,
     possible_ends = []
 
     for i, speech_prob in enumerate(speech_probs):
-        if (speech_prob >= threshold) and temp_end:
-            if temp_end != 0:
-                sil_dur = (hop_size_samples * i) - temp_end
-                if sil_dur > min_silence_samples_at_max_speech:
-                    possible_ends.append((temp_end, sil_dur))
-                temp_end = 0
-            if next_start < prev_end:
-                next_start = hop_size_samples * i
+        cur_sample = window_size_samples * i
 
+        # If speech returns after a temp_end, record candidate silence if long enough and clear temp_end
+        if (speech_prob >= threshold) and temp_end:
+            sil_dur = cur_sample - temp_end
+            if sil_dur > min_silence_samples_at_max_speech:
+                possible_ends.append((temp_end, sil_dur))
+            temp_end = 0
+            if next_start < prev_end:
+                next_start = cur_sample
+
+        # Start of speech
         if (speech_prob >= threshold) and not triggered:
             triggered = True
-            current_speech['start'] = hop_size_samples * i
+            current_speech['start'] = cur_sample
             continue
 
-        if triggered and (hop_size_samples * i) - current_speech['start'] > max_speech_samples:
-            if possible_ends:
-                if use_max_poss_sil_at_max_speech:
-                    prev_end, dur = max(possible_ends, key=lambda x: x[1])  # use the longest possible silence segment in the current speech chunk
-                else:
-                    prev_end, dur = possible_ends[-1]   # use the last possible silence segement
+        # Max speech length reached: decide where to cut
+        if triggered and (cur_sample - current_speech['start'] > max_speech_samples):
+            if use_max_poss_sil_at_max_speech and possible_ends:
+                prev_end, dur = max(possible_ends, key=lambda x: x[1])  # use the longest possible silence segment in the current speech chunk
                 current_speech['end'] = prev_end
                 speeches.append(current_speech)
                 current_speech = {}
                 next_start = prev_end + dur
-                if next_start < prev_end + hop_size_samples * i:  # previously reached silence (< neg_thres) and is still not speech (< thres)
-                    #triggered = False
+
+                if next_start < prev_end + cur_sample:  # previously reached silence (< neg_thres) and is still not speech (< thres)
                     current_speech['start'] = next_start
                 else:
                     triggered = False
-                    #current_speech['start'] = next_start
                 prev_end = next_start = temp_end = 0
                 possible_ends = []
             else:
-                current_speech['end'] = hop_size_samples * i
-                speeches.append(current_speech)
-                current_speech = {}
-                prev_end = next_start = temp_end = 0
-                triggered = False
-                possible_ends = []
-                continue
+                # Legacy max-speech cut (use_max_poss_sil_at_max_speech=False): prefer last valid silence (prev_end) if available
+                if prev_end:
+                    current_speech['end'] = prev_end
+                    speeches.append(current_speech)
+                    current_speech = {}
+                    if next_start < prev_end:
+                        triggered = False
+                    else:
+                        current_speech['start'] = next_start
+                    prev_end = next_start = temp_end = 0
+                    possible_ends = []
+                else:
+                    # No prev_end -> fallback to cutting at current sample
+                    current_speech['end'] = cur_sample
+                    speeches.append(current_speech)
+                    current_speech = {}
+                    prev_end = next_start = temp_end = 0
+                    triggered = False
+                    possible_ends = []
+                    continue
 
+        # Silence detection while in speech
         if (speech_prob < neg_threshold) and triggered:
             if not temp_end:
-                temp_end = hop_size_samples * i
-            # if ((hop_size_samples * i) - temp_end) > min_silence_samples_at_max_speech:  # condition to avoid cutting in very short silence
-            #     prev_end = temp_end
-            if (hop_size_samples * i) - temp_end < min_silence_samples:
+                temp_end = cur_sample
+            sil_dur_now = cur_sample - temp_end
+
+            if not use_max_poss_sil_at_max_speech and sil_dur_now > min_silence_samples_at_max_speech:  # condition to avoid cutting in very short silence
+                prev_end = temp_end
+
+            if sil_dur_now < min_silence_samples:
                 continue
             else:
                 current_speech['end'] = temp_end
@@ -441,7 +486,7 @@ def get_speech_timestamps(audio: torch.Tensor,
             speech_dict['end'] *= step
 
     if visualize_probs:
-        make_visualization(speech_probs, hop_size_samples / sampling_rate)
+        make_visualization(speech_probs, window_size_samples / sampling_rate)
 
     return speeches
 
@@ -631,6 +676,8 @@ def drop_chunks(tss: List[dict],
     for i in _tss:
         chunks.append((wav[cur_start: i['start']]))
         cur_start = i['end']
+
+    chunks.append(wav[cur_start:])
 
     return torch.cat(chunks)
 
