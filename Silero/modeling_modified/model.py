@@ -6,7 +6,7 @@ physical_cores = psutil.cpu_count(logical=False)
 torch.set_num_threads(physical_cores)
 
 
-def load_silero_vad(onnx=False, opset_version=16, use_cpu=True):
+def load_silero_vad(onnx=False, opset_version=16, use_cpu=True, path=""):
     available_ops = [15, 16]
     if onnx and opset_version not in available_ops:
         raise Exception(f'Available ONNX opset_version: {available_ops}')
@@ -32,6 +32,8 @@ def load_silero_vad(onnx=False, opset_version=16, use_cpu=True):
             model_file_path = str(impresources.files(package_path).joinpath(model_name))
 
     if onnx:
+        if path:
+            model_file_path = path
         model = OnnxWrapper(str(model_file_path), force_onnx_cpu=use_cpu)
     else:
         model = init_jit_model(model_file_path)
