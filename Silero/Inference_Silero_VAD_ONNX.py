@@ -7,6 +7,7 @@ from pydub import AudioSegment
 from silero_vad import load_silero_vad, get_speech_timestamps
 
 
+output_onnx_model = "./silero_vad_optimized.onnx"
 test_vad_audio = "./vad_sample.wav"                            # The test audio path.
 save_timestamps_second = "./timestamps_second.txt"             # The saved path.
 save_timestamps_indices = "./timestamps_indices.txt"           # The saved path.
@@ -76,7 +77,7 @@ def format_time(seconds):
 
 
 # Load the Silero
-silero_vad = load_silero_vad(onnx=True, use_cpu=use_cpu)
+silero_vad = load_silero_vad(onnx=True, use_cpu=use_cpu, path=output_onnx_model)
 
 # Load the audio
 audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float16 if use_fp16 else np.float32) * 0.000030517578  # 1/32768
