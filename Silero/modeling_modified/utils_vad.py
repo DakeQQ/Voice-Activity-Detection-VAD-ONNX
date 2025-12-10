@@ -7,7 +7,7 @@ from packaging import version
 languages = ['ru', 'en', 'de', 'es']
 
 
-class OnnxWrapper:
+class OnnxWrapper():
 
     def __init__(self, path, force_onnx_cpu=True):
         import numpy as np
