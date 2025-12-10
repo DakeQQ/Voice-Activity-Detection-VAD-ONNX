@@ -25,7 +25,7 @@ MIN_SPEECH_DURATION = 0.1                            # A judgment factor used to
 MAX_SPEECH_DURATION = 20                             # Set for silero_vad, maximum silence duration time. Unit: second.
 MIN_SILENCE_DURATION = 1000                          # Set for silero_vad, minimum silence duration time. Unit: ms.
 SAMPLE_RATE = 16000                                  # Silero VAD accept the audio with 8kHz or 16kHz.
-upgrade_opset = 18                                   # Upgrade the onnx model opset. Set 0 for disable.
+upgrade_opset = 0                                    # Upgrade the onnx model opset. Set 0 for disable.
 
 
 site_package_path = site.getsitepackages()[-1]
@@ -93,7 +93,7 @@ model_path = site_package_path + '/silero_vad/data/silero_vad.onnx'
 
 if upgrade_opset > 0:
     model = onnx.load(model_path)
-    model = onnx.version_converter.convert_version(model, 18)
+    model = onnx.version_converter.convert_version(model, upgrade_opset)
     onnx.save(model, output_onnx_model, save_as_external_data=False)
     model_path = output_onnx_model
     del model
@@ -140,7 +140,7 @@ slim(
 
 
 # Load the Silero
-silero_vad = load_silero_vad(onnx=True, use_cpu=use_cpu)
+silero_vad = load_silero_vad(onnx=True, use_cpu=use_cpu, path=output_onnx_model)
 
 
 # Load the audio
