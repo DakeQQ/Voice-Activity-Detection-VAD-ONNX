@@ -23,7 +23,8 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 ORT_Accelerate_Providers = []                               # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                             # else keep empty.
 DYNAMIC_AXES = True                                         # The default dynamic axis is input audio length.
-SAMPLE_RATE = 16000                                         # The model parameter, do not edit the value.
+IN_SAMPLE_RATE = 16000                                      # [8000, 16000, 22500, 24000, 44000, 48000]; It accepts various sample rates as input.
+SAMPLE_RATE = 16000                                         # The model native rate, do not edit the value.
 OUTPUT_FRAME_LENGTH = 320                                   # The model parameter, do not edit it.
 INPUT_AUDIO_LENGTH = 160000                                 # The max length of input audio segment. For DYNAMIC_AXES=False.
 WINDOW_TYPE = 'hann_sym'                                    # Type of window function used in the STFT. NeMo uses symmetric (periodic=False) hann window.
@@ -169,11 +170,17 @@ class NVIDIA_VAD_Optimized(torch.nn.Module):
       - No Python-level control flow in forward()
     """
 
-    def __init__(self, nvidia_vad, stft_model, nfft_stft, n_mels, sample_rate, pre_emphasis):
+    def __init__(self, nvidia_vad, stft_model, nfft_stft, n_mels, sample_rate, pre_emphasis, in_sample_rate=16000):
         super().__init__()
 
         self.nvidia_vad = nvidia_vad
         self.stft_model = stft_model
+
+        # ── Sample rate interpolation (resample input to model's native 16000 Hz) ──
+        self.in_sample_rate_scale = in_sample_rate / 16000.0
+        self.model_rate_scale = 1.0 / self.in_sample_rate_scale
+        self.resample_before = self.in_sample_rate_scale > 1.0
+        self.resample_after = self.in_sample_rate_scale < 1.0
 
         # ── Register mel filterbank as buffer (ONNX initializer) ──────────
         fbank = torchaudio.functional.melscale_fbanks(
@@ -225,9 +232,26 @@ class NVIDIA_VAD_Optimized(torch.nn.Module):
             signal_len:    int32, shape (1,) — number of valid output frames
         """
         # ── Step 1: int16→float + pre-emphasis in single Conv1d ───────────
+        # Resample to model's native 16000 Hz if input rate is higher
+        audio = audio.float()
+        if self.resample_before:
+            audio = F.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
+            )
         # Pad left by 1 (constant 0) for causal pre-emphasis filter
-        audio = F.pad(audio.float(), (1, 0), mode='constant', value=0.0)
+        audio = F.pad(audio, (1, 0), mode='constant', value=0.0)
         audio = F.conv1d(audio, self.pre_emph_kernel)
+        # Resample to model's native 16000 Hz if input rate is lower
+        if self.resample_after:
+            audio = F.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
+            )
 
         # ── Step 2: STFT (Conv1d-based, already ONNX-optimized) ───────────
         real_part, imag_part = self.stft_model(audio)
@@ -258,11 +282,15 @@ class NVIDIA_VAD_Optimized(torch.nn.Module):
 class NVIDIA_VAD_Reference(torch.nn.Module):
     """Original (non-optimized) model for numerical validation."""
 
-    def __init__(self, nvidia_vad, stft_model, nfft_stft, n_mels, sample_rate, pre_emphasis):
+    def __init__(self, nvidia_vad, stft_model, nfft_stft, n_mels, sample_rate, pre_emphasis, in_sample_rate=16000):
         super().__init__()
         self.nvidia_vad = nvidia_vad
         self.stft_model = stft_model
         self.pre_emphasis = float(pre_emphasis)
+        self.in_sample_rate_scale = in_sample_rate / 16000.0
+        self.model_rate_scale = 1.0 / self.in_sample_rate_scale
+        self.resample_before = self.in_sample_rate_scale > 1.0
+        self.resample_after = self.in_sample_rate_scale < 1.0
         self.fbank = (torchaudio.functional.melscale_fbanks(
             nfft_stft // 2 + 1, 0, sample_rate // 2, n_mels, sample_rate, 'slaney', 'slaney'
         )).transpose(0, 1).unsqueeze(0)
@@ -276,11 +304,26 @@ class NVIDIA_VAD_Reference(torch.nn.Module):
                         layer.use_mask = False
 
     def forward(self, audio):
-        audio = audio.float() * self.inv_int16
+        audio = audio.float()
+        if self.resample_before:
+            audio = torch.nn.functional.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
+            )
+        audio = audio * self.inv_int16
         if self.pre_emphasis > 0:
             audio = torch.cat(
                 [audio[:, :, [0]], audio[:, :, 1:] - self.pre_emphasis * audio[:, :, :-1]],
                 dim=-1
+            )
+        if self.resample_after:
+            audio = torch.nn.functional.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
             )
         real_part, imag_part = self.stft_model(audio)
         mel_features = (torch.matmul(self.fbank, real_part * real_part + imag_part * imag_part) + 1e-07).log()
@@ -318,7 +361,7 @@ with torch.inference_mode():
         model_name=model_path, strict=False
     ).to('cpu').float().eval()
     reference_model = NVIDIA_VAD_Reference(
-        model_raw_ref, custom_stft_ref, NFFT_STFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE
+        model_raw_ref, custom_stft_ref, NFFT_STFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, IN_SAMPLE_RATE
     ).eval()
 
     # ── Load again for optimized model (BN will be folded in-place) ───
@@ -339,7 +382,7 @@ with torch.inference_mode():
     # ── Build optimized model ─────────────────────────────────────────
     print("\n[3/5] Building optimized model (folding BN, registering buffers)...")
     optimized_model = NVIDIA_VAD_Optimized(
-        model_raw, custom_stft, NFFT_STFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE
+        model_raw, custom_stft, NFFT_STFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, IN_SAMPLE_RATE
     ).eval()
 
     # ── Validation: Original PyTorch vs Optimized PyTorch ─────────────
@@ -469,7 +512,7 @@ with torch.inference_mode():
         model_name=model_path, strict=False
     ).to('cpu').float().eval()
     opt_model_v = NVIDIA_VAD_Optimized(
-        model_v, custom_stft_v, NFFT_STFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE
+        model_v, custom_stft_v, NFFT_STFT, N_MELS, SAMPLE_RATE, PRE_EMPHASIZE, IN_SAMPLE_RATE
     ).eval()
 
     for test_len in test_lengths:
@@ -516,7 +559,7 @@ def normalise_audio(audio: np.ndarray, target_rms: float = 8192.0) -> np.ndarray
 
 print(f"\n\nTest Input Audio: {test_vad_audio}")
 audio = np.array(
-    AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(),
+    AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(IN_SAMPLE_RATE).get_array_of_samples(),
     dtype=np.int16
 )
 if NORMALIZE_AUDIO:
@@ -527,7 +570,7 @@ audio = audio.reshape(1, 1, -1)
 
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
 if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH = min(SAMPLE_RATE * 3600, audio_len)
+    INPUT_AUDIO_LENGTH = min(IN_SAMPLE_RATE * 3600, audio_len)
 else:
     INPUT_AUDIO_LENGTH = shape_value_in
 
@@ -804,7 +847,7 @@ vad_postprocessor = VadPostprocessor(
     frame_shift_s=OUTPUT_FRAME_SHIFT_S,
 )
 vad_decisions = vad_postprocessor.process(all_vad_probs)
-timestamps = vad_postprocessor.decision_to_segment(vad_decisions, audio_len / SAMPLE_RATE)
+timestamps = vad_postprocessor.decision_to_segment(vad_decisions, audio_len / IN_SAMPLE_RATE)
 print(f"Complete: 100.00%")
 
 # Save timestamps
@@ -820,11 +863,11 @@ with open(save_timestamps_second, "w", encoding='UTF-8') as file:
 with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Indices:")
     for start, end in timestamps:
-        line = f"{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}\n"
+        line = f"{int(start * IN_SAMPLE_RATE)} --> {int(end * IN_SAMPLE_RATE)}\n"
         file.write(line)
         print(line.replace("\n", ""))
 
-audio_duration = audio_len / SAMPLE_RATE
+audio_duration = audio_len / IN_SAMPLE_RATE
 elapsed = end_time - start_time
 rtf = elapsed / audio_duration
 print(f"\nVAD Process Complete.\n\nTime Cost: {elapsed:.3f} Seconds")

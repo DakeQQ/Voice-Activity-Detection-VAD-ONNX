@@ -12,7 +12,8 @@ save_timestamps_indices = "./timestamps_indices.txt"                            
 
 ORT_Accelerate_Providers = []           # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                         # else keep empty.
-SAMPLE_RATE = 16000                     # The model parameter, do not edit the value.
+IN_SAMPLE_RATE = 16000                  # [8000, 16000, 22500, 24000, 44000, 48000]; It accepts various sample rates as input.
+SAMPLE_RATE = 16000                     # The model native rate, do not edit the value.
 OUTPUT_FRAME_LENGTH = 320               # The model parameter, do not edit it.
 MAX_THREADS = 4
 
@@ -119,7 +120,7 @@ def normalise_audio(audio: np.ndarray, target_rms: float = 8192.0) -> np.ndarray
 
 # # Load the input audio
 print(f"\nTest Input Audio: {test_vad_audio}")
-audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
+audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(IN_SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
 if NORMALIZE_AUDIO:
     audio = normalise_audio(audio)
 audio_len = len(audio)
@@ -128,7 +129,7 @@ audio = audio.reshape(1, 1, -1)
 
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
 if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH = min(SAMPLE_RATE * 3600, audio_len)  # You can adjust it.
+    INPUT_AUDIO_LENGTH = min(IN_SAMPLE_RATE * 3600, audio_len)  # You can adjust it.
 else:
     INPUT_AUDIO_LENGTH = shape_value_in
 stride_step = INPUT_AUDIO_LENGTH
@@ -398,7 +399,7 @@ vad_postprocessor = VadPostprocessor(
     frame_shift_s=OUTPUT_FRAME_SHIFT_S,
 )
 vad_decisions = vad_postprocessor.process(all_vad_probs)
-timestamps = vad_postprocessor.decision_to_segment(vad_decisions, audio_len / SAMPLE_RATE)
+timestamps = vad_postprocessor.decision_to_segment(vad_decisions, audio_len / IN_SAMPLE_RATE)
 print(f"Complete: 100.00%")
 
 # Save the timestamps.
@@ -414,7 +415,7 @@ with open(save_timestamps_second, "w", encoding='UTF-8') as file:
 with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Indices:")
     for start, end in timestamps:
-        line = f"{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}\n"
+        line = f"{int(start * IN_SAMPLE_RATE)} --> {int(end * IN_SAMPLE_RATE)}\n"
         file.write(line)
         print(line.replace("\n", ""))
 
