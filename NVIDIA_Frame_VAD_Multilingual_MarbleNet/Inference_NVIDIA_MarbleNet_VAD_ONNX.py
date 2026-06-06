@@ -14,12 +14,19 @@ ORT_Accelerate_Providers = []           # If you have accelerate devices for : [
                                         # else keep empty.
 SAMPLE_RATE = 16000                     # The model parameter, do not edit the value.
 OUTPUT_FRAME_LENGTH = 320               # The model parameter, do not edit it.
-FUSION_THRESHOLD = 0.1                  # A judgment factor used to merge timestamps: if two speech segments are too close, they are combined into one. Unit: second.
-MIN_SPEECH_DURATION = 0.05              # A judgment factor used to filter the vad results. Unit: second.
-SPEAKING_SCORE = 0.5                    # A judgment factor used to determine whether the state is speaking or not. A larger value makes activation more difficult.
-SILENCE_SCORE = 0.5                     # A judgment factor used to determine whether the state is silent or not. A smaller value makes it easier to cut off speaking.
 MAX_THREADS = 4
+
+# ─── VAD Postprocessing Parameters ───────────────────────────────────────────
+OUTPUT_FRAME_SHIFT_S = OUTPUT_FRAME_LENGTH / SAMPLE_RATE    # 0.02 seconds (20ms frame shift for NVIDIA MarbleNet output)
+SPEAKING_SCORE = 0.5                                        # Speech probability threshold.
+SMOOTH_WINDOW_SIZE = 3                                      # Probability smoothing window size (in output frames).
+MIN_SPEECH_FRAME = 10                                       # Min speech frames to confirm a segment.
+MAX_SPEECH_FRAME = 1000                                     # Max speech frames before forced split.
+MIN_SILENCE_FRAME = 10                                      # Min silence frames to confirm end of speech.
+MERGE_SILENCE_FRAME = 3                                     # Merge silence gaps shorter than this (frames).
+EXTEND_SPEECH_FRAME = 0                                     # Extend speech regions by this many frames.
 DEVICE_ID = 0
+NORMALIZE_AUDIO = False                 # Normalize the input audio to a target RMS level (e.g., 8192) before processing. It can help improve the performance of the model, especially for low-volume audio. Set it to True if you want to enable it.
 
 
 if "OpenVINOExecutionProvider" in ORT_Accelerate_Providers:
@@ -99,16 +106,22 @@ out_name_A1 = out_name_A[1].name
 out_name_A2 = out_name_A[2].name
 
 
-def normalize_to_int16(audio):
-    max_val = np.max(np.abs(audio))
-    scaling_factor = 32767.0 / max_val if max_val > 0 else 1.0
-    return (audio * float(scaling_factor)).astype(np.int16)
+def normalise_audio(audio: np.ndarray, target_rms: float = 8192.0) -> np.ndarray:
+    _audio = audio.astype(np.float32)
+    rms = np.sqrt(np.mean(_audio * _audio, dtype=np.float32), dtype=np.float32)
+    if rms > 0:
+        _audio *= (target_rms / (rms + 1e-7))
+        np.clip(_audio, -32768.0, 32767.0, out=_audio)
+        return _audio.astype(np.int16)
+    else:
+        return audio
 
 
 # # Load the input audio
 print(f"\nTest Input Audio: {test_vad_audio}")
-audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float32)
-audio = normalize_to_int16(audio)
+audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
+if NORMALIZE_AUDIO:
+    audio = normalise_audio(audio)
 audio_len = len(audio)
 inv_audio_len = float(100.0 / audio_len)
 audio = audio.reshape(1, 1, -1)
@@ -133,46 +146,210 @@ elif audio_len < INPUT_AUDIO_LENGTH:
 aligned_len = audio.shape[-1]
 
 
-def process_timestamps(timestamps, fusion_threshold=1.0, min_duration=0.5):
-    # Filter out short durations
-    filtered_timestamps = [(start, end) for start, end in timestamps if (end - start) >= min_duration]
-    del timestamps
-    # Fuse and filter timestamps
-    fused_timestamps_1st = []
-    for start, end in filtered_timestamps:
-        # Merge with the previous segment if within the fusion threshold
-        if fused_timestamps_1st and (start - fused_timestamps_1st[-1][1] <= fusion_threshold):
-            fused_timestamps_1st[-1] = (fused_timestamps_1st[-1][0], end)
-        else:
-            fused_timestamps_1st.append((start, end))
-    del filtered_timestamps
-    fused_timestamps_2nd = []
-    for start, end in fused_timestamps_1st:
-        # Merge with the previous segment if within the fusion threshold
-        if fused_timestamps_2nd and (start - fused_timestamps_2nd[-1][1] <= fusion_threshold):
-            fused_timestamps_2nd[-1] = (fused_timestamps_2nd[-1][0], end)
-        else:
-            fused_timestamps_2nd.append((start, end))
-    return fused_timestamps_2nd
+# ═══════════════════════════════════════════════════════════════════════════════
+# VAD Post-processing (from FireRedVAD, adapted for NVIDIA MarbleNet 20ms frames)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_VAD_SILENCE = 0
+_VAD_POSSIBLE_SPEECH = 1
+_VAD_SPEECH = 2
+_VAD_POSSIBLE_SILENCE = 3
 
 
-def vad_to_timestamps(vad_output, frame_duration):
-    timestamps = []
-    start = None
-    # Extract raw timestamps
-    for i, silence in enumerate(vad_output):
-        if silence:
-            if start is not None:  # End of the current speaking segment
-                end = i * frame_duration + frame_duration
-                timestamps.append((start, end))
-                start = None
+class VadPostprocessor:
+    __slots__ = ('smooth_window_size', 'prob_threshold', 'min_speech_frame',
+                 'max_speech_frame', 'min_silence_frame', 'merge_silence_frame',
+                 'extend_speech_frame', 'frame_shift_s', '_inv_ws', '_half_max')
+
+    def __init__(self, smooth_window_size, prob_threshold, min_speech_frame,
+                 max_speech_frame, min_silence_frame, merge_silence_frame,
+                 extend_speech_frame, frame_shift_s):
+        self.smooth_window_size = max(1, smooth_window_size)
+        self.prob_threshold = np.float32(prob_threshold)
+        self.min_speech_frame = min_speech_frame
+        self.max_speech_frame = max_speech_frame
+        self.min_silence_frame = min_silence_frame
+        self.merge_silence_frame = merge_silence_frame
+        self.extend_speech_frame = extend_speech_frame
+        self.frame_shift_s = np.float32(frame_shift_s)
+        self._inv_ws = np.float32(1.0 / self.smooth_window_size)
+        self._half_max = max_speech_frame >> 1
+
+    def process(self, raw_probs):
+        """Process raw probabilities into binary speech decisions (numpy int8 array)."""
+        if isinstance(raw_probs, np.ndarray):
+            n = raw_probs.shape[0]
+            if n == 0:
+                return np.empty(0, dtype=np.int8)
+            probs = raw_probs.astype(np.float32, copy=False)
         else:
-            if start is None:  # Start of a new speaking segment
-                start = i * frame_duration
-    # Handle the case where speech continues until the end
-    if start is not None:
-        timestamps.append((start, len(vad_output) * frame_duration))
-    return timestamps
+            n = len(raw_probs)
+            if n == 0:
+                return np.empty(0, dtype=np.int8)
+            probs = np.asarray(raw_probs, dtype=np.float32)
+
+        decisions = self._smooth_threshold_state_machine(probs, n)
+        self._fix_starts_inplace(decisions, n)
+        if self.merge_silence_frame > 0:
+            self._merge_silence_inplace(decisions, n)
+        if self.extend_speech_frame > 0:
+            self._extend_inplace(decisions, n)
+        self._split_long_inplace(decisions, probs, n)
+        return decisions
+
+    def decision_to_segment(self, decisions, wav_dur=None):
+        """Extract (start_sec, end_sec) segments from binary decision array."""
+        if isinstance(decisions, np.ndarray):
+            dec = decisions
+            n = dec.shape[0]
+        else:
+            dec = np.asarray(decisions, dtype=np.int8)
+            n = dec.shape[0]
+        if n == 0:
+            return []
+
+        padded = np.empty(n + 2, dtype=np.int8)
+        padded[0] = 0
+        padded[n + 1] = 0
+        padded[1:n + 1] = dec
+        diff = np.diff(padded)
+        starts = np.flatnonzero(diff == 1).astype(np.float32)
+        ends = np.flatnonzero(diff == -1).astype(np.float32)
+
+        num_segs = starts.shape[0]
+        if num_segs == 0:
+            return []
+
+        segments = np.empty((num_segs, 2), dtype=np.float32)
+        segments[:, 0] = starts * self.frame_shift_s
+        segments[:, 1] = ends * self.frame_shift_s
+
+        if dec[n - 1] != 0:
+            end_time = n * self.frame_shift_s
+            if wav_dur is not None and wav_dur < end_time:
+                end_time = wav_dur
+            segments[-1, 1] = end_time
+
+        return [(round(s, 3), round(e, 3)) for s, e in segments.tolist()]
+
+    def _smooth_threshold_state_machine(self, probs, n):
+        decisions = np.zeros(n, dtype=np.int8)
+        ws = self.smooth_window_size
+        threshold = self.prob_threshold
+        min_sp = self.min_speech_frame
+        min_si = self.min_silence_frame
+
+        if ws > 1:
+            cumsum = np.empty(n + 1, dtype=np.float32)
+            cumsum[0] = 0.0
+            np.cumsum(probs, out=cumsum[1:])
+            smoothed = np.empty(n, dtype=np.float32)
+            edge_end = min(ws - 1, n)
+            for i in range(edge_end):
+                smoothed[i] = cumsum[i + 1] / (i + 1)
+            if n >= ws:
+                smoothed[ws - 1:] = (cumsum[ws:] - cumsum[:n - ws + 1]) * self._inv_ws
+        else:
+            smoothed = probs
+
+        if min_sp <= 0 and min_si <= 0:
+            decisions[:] = (smoothed >= threshold)
+        else:
+            state = _VAD_SILENCE
+            speech_start = 0
+            for t in range(n):
+                is_speech = smoothed[t] >= threshold
+                if state == _VAD_SILENCE:
+                    if is_speech:
+                        state = _VAD_POSSIBLE_SPEECH
+                        speech_start = t
+                elif state == _VAD_POSSIBLE_SPEECH:
+                    if is_speech:
+                        if t - speech_start >= min_sp:
+                            state = _VAD_SPEECH
+                            decisions[speech_start:t] = 1
+                    else:
+                        state = _VAD_SILENCE
+                elif state == _VAD_SPEECH:
+                    if not is_speech:
+                        state = _VAD_POSSIBLE_SILENCE
+                        silence_start = t
+                else:  # _VAD_POSSIBLE_SILENCE
+                    if not is_speech:
+                        if t - silence_start >= min_si:
+                            state = _VAD_SILENCE
+                    else:
+                        state = _VAD_SPEECH
+                decisions[t] = 1 if state >= _VAD_SPEECH else 0
+
+        return decisions
+
+    def _fix_starts_inplace(self, decisions, n):
+        ws = self.smooth_window_size
+        if ws <= 1:
+            return
+        for t in range(1, n):
+            if decisions[t] == 1 and decisions[t - 1] == 0:
+                start = t - ws if t >= ws else 0
+                decisions[start:t] = 1
+
+    def _merge_silence_inplace(self, decisions, n):
+        merge_thr = self.merge_silence_frame
+        silence_start = -1
+        for t in range(1, n):
+            prev = decisions[t - 1]
+            curr = decisions[t]
+            if prev == 1 and curr == 0 and silence_start < 0:
+                silence_start = t
+            elif prev == 0 and curr == 1 and silence_start >= 0:
+                if t - silence_start < merge_thr:
+                    decisions[silence_start:t] = 1
+                silence_start = -1
+
+    def _extend_inplace(self, decisions, n):
+        ext = self.extend_speech_frame
+        dist = ext + 1
+        for t in range(n):
+            if decisions[t]:
+                dist = 0
+            else:
+                dist += 1
+                if dist <= ext:
+                    decisions[t] = 1
+        dist = ext + 1
+        for t in range(n - 1, -1, -1):
+            if decisions[t]:
+                dist = 0
+            else:
+                dist += 1
+                if dist <= ext:
+                    decisions[t] = 1
+
+    def _split_long_inplace(self, decisions, probs, n):
+        max_sf = self.max_speech_frame
+        half_max = self._half_max
+        t = 0
+        while t < n:
+            if decisions[t]:
+                seg_start = t
+                while t < n and decisions[t]:
+                    t += 1
+                dur = t - seg_start
+                if dur > max_sf:
+                    pos = seg_start
+                    seg_end = t
+                    while pos + max_sf < seg_end:
+                        w_start = pos + half_max
+                        w_end = pos + max_sf
+                        if w_end > seg_end:
+                            w_end = seg_end
+                        if w_start >= w_end:
+                            break
+                        min_idx = w_start + int(np.argmin(probs[w_start:w_end]))
+                        decisions[min_idx] = 0
+                        pos = min_idx + 1
+            else:
+                t += 1
 
 
 def format_time(seconds):
@@ -190,28 +367,38 @@ def format_time(seconds):
 # Start to run NVIDIA_VAD
 slice_start = 0
 slice_end = INPUT_AUDIO_LENGTH
-silence = True
-saved = []
+all_vad_probs = []
 print("\nRunning the NVIDIA_VAD by ONNX Runtime.")
 start_time = time.time()
 while slice_end <= aligned_len:
     score_silence, score_active, signal_len = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2], {in_name_A0: audio[:, :, slice_start: slice_end]})
-    for i in range(signal_len[0]):
-        if silence:
-            if score_active[:, i] >= SPEAKING_SCORE:
-                silence = False
-        else:
-            if score_silence[:, i] >= SILENCE_SCORE:
-                silence = True
-        saved.append(silence)
+    # score_active shape: [1, signal_len, 1] -> extract speech probs as 1D
+    valid_frames = min(int(signal_len[0]), score_active.shape[1])
+    all_vad_probs.append(score_active[0, :valid_frames, 0])
     slice_start += stride_step
     slice_end = slice_start + INPUT_AUDIO_LENGTH
 end_time = time.time()
 
-# Generate timestamps.
-timestamps = vad_to_timestamps(saved, OUTPUT_FRAME_LENGTH / SAMPLE_RATE)
-timestamps = process_timestamps(timestamps, FUSION_THRESHOLD, MIN_SPEECH_DURATION)
+# Concatenate all speech probabilities
+if all_vad_probs:
+    all_vad_probs = np.concatenate(all_vad_probs, axis=0)
+else:
+    all_vad_probs = np.zeros((0,), dtype=np.float32)
+
+# Post-process using VadPostprocessor (same approach as FireRedVAD)
+vad_postprocessor = VadPostprocessor(
+    smooth_window_size=SMOOTH_WINDOW_SIZE,
+    prob_threshold=SPEAKING_SCORE,
+    min_speech_frame=MIN_SPEECH_FRAME,
+    max_speech_frame=MAX_SPEECH_FRAME,
+    min_silence_frame=MIN_SILENCE_FRAME,
+    merge_silence_frame=MERGE_SILENCE_FRAME,
+    extend_speech_frame=EXTEND_SPEECH_FRAME,
+    frame_shift_s=OUTPUT_FRAME_SHIFT_S,
+)
+vad_decisions = vad_postprocessor.process(all_vad_probs)
+timestamps = vad_postprocessor.decision_to_segment(vad_decisions, audio_len / SAMPLE_RATE)
 print(f"Complete: 100.00%")
 
 # Save the timestamps.
