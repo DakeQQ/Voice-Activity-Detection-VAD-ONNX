@@ -9,6 +9,7 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
    - [Silero](https://github.com/snakers4/silero-vad)  (Optimized for enhanced parallel computing performance)
    - [DFSMN](https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k) (Reuse the Acoustic Echo Cancellation model. Accepts Near-End and Far-End audio as inputs. Output the Near-End VAD result only.)
+   - [FireRedVAD](https://github.com/FireRedTeam/FireRedVAD)
 
 3. **Recommendation and Note**:  
    - It is recommended to use the [Audio Denoiser](https://github.com/DakeQQ/Audio-Denoiser-ONNX) for optimal performance in noisy environments.
@@ -40,6 +41,8 @@ Timestamps in Indices:
 | Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | Silero <br> f32  | 0.0026                                       |  
 | Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | NVIDIA-VAD <br> f32  | 0.0005 (Chunk Size: 89000)              |  
 | Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | DFSMN-VAD <br> f32  | 0.27 (Chunk Size: 31841)                 |  
+| Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | FireRedVAD <br> f32  | 0.0013 (Chunk Size: 16000)              |  
+
 
 ---
 
@@ -56,6 +59,7 @@ Timestamps in Indices:
    - [FSMN](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/summary)
    - [Silero](https://github.com/snakers4/silero-vad)  (优化了并行计算性能)
    - [DFSMN](https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k) (复用回声消除模型。接收近端和远端音频作为输入。仅输出近端 VAD 结果。)
+   - [FireRedVAD](https://github.com/FireRedTeam/FireRedVAD)
 
 
 3. **推荐与注意**：  
