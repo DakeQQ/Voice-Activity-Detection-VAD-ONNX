@@ -32,8 +32,10 @@ OPSET = 18                              # ONNX opset version.
 ORT_Accelerate_Providers = []           # e.g. ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'MIGraphXExecutionProvider']
 
 
+IN_SAMPLE_RATE = 16000                  # [8000, 16000, 22500, 24000, 44000, 48000]; It accepts various sample rates as input.
+
 # ─── Audio & STFT Parameters (do not edit) ────────────────────────────────────
-SAMPLE_RATE = 16000                     # Hz
+SAMPLE_RATE = 16000                     # The model native rate, do not edit the value.
 FRAME_SHIFT_MS = 10                     # Frame shift (ms).
 FRAME_LENGTH_MS = 25                    # Frame length (ms).
 N_MELS = 80                             # Mel filterbank bands.
@@ -48,7 +50,7 @@ OUTPUT_FRAME_SHIFT = HOP_LENGTH         # Output frame shift in samples.
 
 # ─── Stream-VAD Fixed Chunk ──────────────────────────────────────────────────
 STREAM_CHUNK_MS = 160                   # [80, 160, 200] Fixed streaming chunk size (ms).
-STREAM_CHUNK_SAMPLES = int(SAMPLE_RATE * STREAM_CHUNK_MS / 1000)  # 2560 samples.
+STREAM_CHUNK_SAMPLES = int(IN_SAMPLE_RATE * STREAM_CHUNK_MS / 1000)  # 2560 samples at IN_SAMPLE_RATE.
 # Dynamic axes justification for Stream-VAD:
 #   The streaming model requires dynamic audio_len because:
 #   - Different deployment scenarios use different chunk sizes (80ms, 160ms, 200ms).
@@ -381,9 +383,15 @@ class FireRedVAD_ONNX(torch.nn.Module):
     Output: probs [1, odim, signal_len]
     """
     def __init__(self, detect_model, nfft, hop_length, win_length, n_mels,
-                 sample_rate, pre_emphasis, window_type):
+                 sample_rate, pre_emphasis, window_type, in_sample_rate=16000):
         super(FireRedVAD_ONNX, self).__init__()
         self.detect_model = detect_model
+
+        # Sample rate interpolation (resample input to model's native 16000 Hz)
+        self.in_sample_rate_scale = in_sample_rate / 16000.0
+        self.model_rate_scale = 1.0 / self.in_sample_rate_scale
+        self.resample_before = self.in_sample_rate_scale > 1.0
+        self.resample_after = self.in_sample_rate_scale < 1.0
 
         # Pre-emphasis kernel: y[t] = x[t] - coeff * x[t-1]
         self.register_buffer(
@@ -419,8 +427,26 @@ class FireRedVAD_ONNX(torch.nn.Module):
         # 1. int16 → float32 (Cast)
         audio = audio.float()
 
-        # 2. Pre-emphasis: y[t] = x[t] - coeff * x[t-1]
+        # 2. Resample to model's native 16000 Hz if input rate is higher
+        if self.resample_before:
+            audio = torch.nn.functional.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
+            )
+
+        # 3. Pre-emphasis: y[t] = x[t] - coeff * x[t-1]
         audio = torch.nn.functional.conv1d(torch.nn.functional.pad(audio, (1, 0)), self.preemph_kernel)
+
+        # 4. Resample to model's native 16000 Hz if input rate is lower
+        if self.resample_after:
+            audio = torch.nn.functional.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
+            )
 
         # 3. STFT via STFT_Process (Conv1d, no center padding)
         real_part, imag_part = self.stft(audio)
@@ -637,9 +663,15 @@ class FireRedStreamVAD_ONNX(torch.nn.Module):
     This only affects the Conv1d input length — no Shape/Gather/Range ops introduced.
     """
     def __init__(self, detect_model_streaming, nfft, hop_length, win_length,
-                 n_mels, sample_rate, pre_emphasis, window_type):
+                 n_mels, sample_rate, pre_emphasis, window_type, in_sample_rate=16000):
         super(FireRedStreamVAD_ONNX, self).__init__()
         self.detect_model = detect_model_streaming
+
+        # Sample rate interpolation (resample input to model's native 16000 Hz)
+        self.in_sample_rate_scale = in_sample_rate / 16000.0
+        self.model_rate_scale = 1.0 / self.in_sample_rate_scale
+        self.resample_before = self.in_sample_rate_scale > 1.0
+        self.resample_after = self.in_sample_rate_scale < 1.0
 
         # Pre-emphasis kernel: y[t] = x[t] - coeff * x[t-1]
         self.register_buffer(
@@ -677,8 +709,26 @@ class FireRedStreamVAD_ONNX(torch.nn.Module):
         # 1. int16 → float32
         audio = audio.float()
 
-        # 2. Pre-emphasis: y[t] = x[t] - coeff * x[t-1]
+        # 2. Resample to model's native 16000 Hz if input rate is higher
+        if self.resample_before:
+            audio = torch.nn.functional.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
+            )
+
+        # 3. Pre-emphasis: y[t] = x[t] - coeff * x[t-1]
         audio = torch.nn.functional.conv1d(torch.nn.functional.pad(audio, (1, 0)), self.preemph_kernel)
+
+        # 4. Resample to model's native 16000 Hz if input rate is lower
+        if self.resample_after:
+            audio = torch.nn.functional.interpolate(
+                audio,
+                scale_factor=self.model_rate_scale,
+                mode='linear',
+                align_corners=False
+            )
 
         # 3. STFT via STFT_Process (Conv1d, no center padding)
         real_part, imag_part = self.stft(audio)
@@ -727,7 +777,8 @@ def export_model(model_path, onnx_path, model_type='vad'):
             n_mels=N_MELS,
             sample_rate=SAMPLE_RATE,
             pre_emphasis=PRE_EMPHASIZE,
-            window_type=WINDOW_TYPE
+            window_type=WINDOW_TYPE,
+            in_sample_rate=IN_SAMPLE_RATE
         ).eval()
 
         # Fixed input shape for static graph
@@ -789,7 +840,8 @@ def export_stream_vad_model(model_path, onnx_path):
             n_mels=N_MELS,
             sample_rate=SAMPLE_RATE,
             pre_emphasis=PRE_EMPHASIZE,
-            window_type=WINDOW_TYPE
+            window_type=WINDOW_TYPE,
+            in_sample_rate=IN_SAMPLE_RATE
         ).eval()
 
         # Fixed chunk size + zero-initialized caches
@@ -849,9 +901,10 @@ def normalise_audio(audio: np.ndarray, target_rms: float = 8192.0) -> np.ndarray
 
 def valid_frame_count(num_samples: int) -> int:
     """Return the number of valid frames for snip_edges=True fbank extraction."""
-    if num_samples < WINDOW_LENGTH:
+    resampled_samples = int(num_samples * SAMPLE_RATE / IN_SAMPLE_RATE)
+    if resampled_samples < WINDOW_LENGTH:
         return 0
-    return 1 + (num_samples - WINDOW_LENGTH) // HOP_LENGTH
+    return 1 + (resampled_samples - WINDOW_LENGTH) // HOP_LENGTH
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1478,7 +1531,8 @@ def validate_export(onnx_path, model_path, model_type='vad'):
             n_mels=N_MELS,
             sample_rate=SAMPLE_RATE,
             pre_emphasis=PRE_EMPHASIZE,
-            window_type=WINDOW_TYPE
+            window_type=WINDOW_TYPE,
+            in_sample_rate=IN_SAMPLE_RATE
         ).eval()
 
         # Deterministic test input
@@ -1560,7 +1614,7 @@ out_name_A0 = out_name_A[0].name
 
 # Load the input audio
 print(f"\nTest Input Audio: {test_vad_audio}")
-audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
+audio = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(IN_SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
 if NORMALIZE_AUDIO:
     audio = normalise_audio(audio)
 audio_len = len(audio)
@@ -1568,7 +1622,7 @@ audio = audio.reshape(1, 1, -1)
 
 shape_value_in = ort_session_A._inputs_meta[0].shape[-1]
 if isinstance(shape_value_in, str):
-    INPUT_AUDIO_LENGTH_RUN = min(SAMPLE_RATE * 3600, audio_len)  # You can adjust it.
+    INPUT_AUDIO_LENGTH_RUN = min(IN_SAMPLE_RATE * 3600, audio_len)  # You can adjust it.
 else:
     INPUT_AUDIO_LENGTH_RUN = shape_value_in
 
@@ -1616,7 +1670,7 @@ vad_postprocessor = VadPostprocessor(
     EXTEND_SPEECH_FRAME,
 )
 vad_decisions = vad_postprocessor.process(all_vad_probs)
-timestamps = vad_postprocessor.decision_to_segment(vad_decisions, audio_len / SAMPLE_RATE)
+timestamps = vad_postprocessor.decision_to_segment(vad_decisions, audio_len / IN_SAMPLE_RATE)
 print(f"Complete: 100.00%")
 
 # Save the timestamps.
@@ -1632,11 +1686,11 @@ with open(save_timestamps_second, "w", encoding='UTF-8') as file:
 with open(save_timestamps_indices, "w", encoding='UTF-8') as file:
     print("\nTimestamps in Indices:")
     for start, end in timestamps:
-        line = f"{int(start * SAMPLE_RATE)} --> {int(end * SAMPLE_RATE)}\n"
+        line = f"{int(start * IN_SAMPLE_RATE)} --> {int(end * IN_SAMPLE_RATE)}\n"
         file.write(line)
         print(line.replace("\n", ""))
 
-vad_rtf = (end_time - start_time) / (audio_len / SAMPLE_RATE)
+vad_rtf = (end_time - start_time) / (audio_len / IN_SAMPLE_RATE)
 print(f"\nVAD Process Complete.\n\nTime Cost: {end_time - start_time:.3f} Seconds")
 print(f"RTF: {vad_rtf:.4f}")
 
@@ -1662,16 +1716,16 @@ if EXPORT_AED:
 
     # Load the input audio
     print(f"\nTest Input Audio: {test_aed_audio}")
-    audio_aed = np.array(AudioSegment.from_file(test_aed_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
+    audio_aed = np.array(AudioSegment.from_file(test_aed_audio).set_channels(1).set_frame_rate(IN_SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
     if NORMALIZE_AUDIO:
         audio_aed = normalise_audio(audio_aed)
     audio_aed_len = len(audio_aed)
-    audio_aed_dur = audio_aed_len / SAMPLE_RATE
+    audio_aed_dur = audio_aed_len / IN_SAMPLE_RATE
     audio_aed = audio_aed.reshape(1, 1, -1)
 
     shape_value_in_B = ort_session_B._inputs_meta[0].shape[-1]
     if isinstance(shape_value_in_B, str):
-        INPUT_AUDIO_LENGTH_RUN_B = min(SAMPLE_RATE * 3600, audio_aed_len)
+        INPUT_AUDIO_LENGTH_RUN_B = min(IN_SAMPLE_RATE * 3600, audio_aed_len)
     else:
         INPUT_AUDIO_LENGTH_RUN_B = shape_value_in_B
 
@@ -1793,11 +1847,11 @@ if EXPORT_STREAM_VAD:
 
     # Load the input audio
     print(f"\nTest Input Audio: {test_vad_audio}")
-    audio_stream = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
+    audio_stream = np.array(AudioSegment.from_file(test_vad_audio).set_channels(1).set_frame_rate(IN_SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
     if NORMALIZE_AUDIO:
         audio_stream = normalise_audio(audio_stream)
     audio_stream_len = len(audio_stream)
-    audio_stream_dur = audio_stream_len / SAMPLE_RATE
+    audio_stream_dur = audio_stream_len / IN_SAMPLE_RATE
 
     # Process in chunks (e.g., 160ms = 2560 samples per chunk -> produces ~16 frames)
     # Uses STREAM_CHUNK_MS and STREAM_CHUNK_SAMPLES from top-level config.
