@@ -10,6 +10,7 @@ Speech activity detection powered by ONNX Runtime for high-performance applicati
    - [Silero](https://github.com/snakers4/silero-vad)  (Optimized for enhanced parallel computing performance)
    - [DFSMN](https://modelscope.cn/models/iic/speech_dfsmn_aec_psm_16k) (Reuse the Acoustic Echo Cancellation model. Accepts Near-End and Far-End audio as inputs. Output the Near-End VAD result only.)
    - [FireRedVAD](https://github.com/FireRedTeam/FireRedVAD)
+   - [SmartTurn-v3](https://modelscope.cn/models/pipecat-ai/smart-turn-v3)
 
 3. **Recommendation and Note**:  
    - It is recommended to use the [Audio Denoiser](https://github.com/DakeQQ/Audio-Denoiser-ONNX) for optimal performance in noisy environments.
@@ -39,9 +40,10 @@ Timestamps in Indices:
 |:------------:|:------------:|:-----------------:|:------------:|:------------------------------------------------:|
 | Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | FSMN <br> f32  | 0.0047                                         |  
 | Ubuntu-24.04 | Desktop      | CPU <br> i3-12300 | Silero <br> f32  | 0.0026                                       |  
-| Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | NVIDIA-VAD <br> f32  | 0.0005 (Chunk Size: 89000)              |  
-| Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | DFSMN-VAD <br> f32  | 0.27 (Chunk Size: 31841)                 |  
-| Ubuntu-24.04 | Desktop      | CPU <br> i7-1165G7 | FireRedVAD <br> f32  | 0.0013 (Chunk Size: 16000)              |  
+| Ubuntu-24.04 | Laptop       | CPU <br> i7-1165G7 | NVIDIA-VAD <br> f32  | 0.0005 (Chunk Size: 89000)              |  
+| Ubuntu-24.04 | Laptop       | CPU <br> i7-1165G7 | DFSMN-VAD <br> f32  | 0.27 (Chunk Size: 31841)                 |  
+| Ubuntu-24.04 | Laptop       | CPU <br> i7-1165G7 | FireRedVAD <br> f32  | 0.0013 (Chunk Size: 16000)              |  
+
 
 
 ---
