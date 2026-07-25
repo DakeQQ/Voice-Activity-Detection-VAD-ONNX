@@ -25,26 +25,6 @@
 
 End-to-end ONNX Runtime pipelines for voice activity detection, audio event detection, streaming VAD, turn-completion detection, and speaker diarization. Audio preprocessing and feature extraction live inside the deployment graphs, so applications can work directly with waveform samples.
 
-```mermaid
-%%{init:{"theme":"base","themeVariables":{"lineColor":"#94a3b8","edgeLabelBackground":"#e2e8f0","primaryTextColor":"#1e293b"}}}%%
-flowchart LR
-    A(["Raw waveform"]) --> F["In-graph<br/>audio frontend"]
-    F --> M["ONNX task model"]
-    M --> D{"Output family"}
-    D -->|VAD / AED| V["Timestamps<br/>or scores"]
-    D -->|SmartTurn| T["Completion<br/>probability"]
-    D -->|Diarization| P["Speaker turns<br/>and embeddings"]
-
-    classDef input fill:#e0f2fe,stroke:#0284c7,color:#0c2a3d;
-    classDef graph fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
-    classDef decision fill:#fef3c7,stroke:#d97706,color:#713f12;
-    classDef result fill:#dcfce7,stroke:#16a34a,color:#14532d;
-    class A input;
-    class F,M graph;
-    class D decision;
-    class V,T,P result;
-```
-
 - **8 pipelines** covering offline VAD, streaming VAD, AED, turn completion, and speaker diarization.
 - **Raw-audio interfaces** with model-specific fixed, dynamic, cache, or recurrent-state contracts.
 - **Portable deployment facts** stored in required metadata carriers and checked before execution.
@@ -128,26 +108,6 @@ These are existing project measurements. Real-time factor is processing time div
 ### 输入原始波形，输出语音事件
 
 本仓库提供基于 ONNX Runtime 的端到端语音处理流程，涵盖语音活动检测、音频事件检测、流式 VAD、话轮结束检测和说话人分段标注。音频预处理与特征提取已集成到部署计算图中，应用端可以直接传入波形采样点。
-
-```mermaid
-%%{init:{"theme":"base","themeVariables":{"lineColor":"#94a3b8","edgeLabelBackground":"#e2e8f0","primaryTextColor":"#1e293b"}}}%%
-flowchart LR
-    A(["原始波形"]) --> F["图内音频前端"]
-    F --> M["ONNX 任务模型"]
-    M --> D{"输出类型"}
-    D -->|VAD / AED| V["时间戳或得分"]
-    D -->|SmartTurn| T["话轮结束概率"]
-    D -->|说话人分段| P["说话人时段与嵌入向量"]
-
-    classDef input fill:#e0f2fe,stroke:#0284c7,color:#0c2a3d;
-    classDef graph fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
-    classDef decision fill:#fef3c7,stroke:#d97706,color:#713f12;
-    classDef result fill:#dcfce7,stroke:#16a34a,color:#14532d;
-    class A input;
-    class F,M graph;
-    class D decision;
-    class V,T,P result;
-```
 
 - **8 套处理流程**，覆盖离线 VAD、流式 VAD、音频事件检测、话轮结束检测和说话人分段标注。
 - **原始音频接口**，按模型提供固定形状、动态形状、缓存或循环状态约定。
