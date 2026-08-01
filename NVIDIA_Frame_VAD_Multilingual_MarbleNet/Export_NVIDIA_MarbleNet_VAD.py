@@ -6,6 +6,7 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import onnx
@@ -19,6 +20,13 @@ if not hasattr(lightning_loggers, 'NeptuneLogger'):
         pass
 
     lightning_loggers.NeptuneLogger = _UnavailableNeptuneLogger
+
+# nv_one_logger releases bundled with some NeMo builds narrow Lightning's
+# Optional[bool] annotation to bool, which the overrides package rejects.
+from lightning.pytorch import Trainer as LightningTrainer
+
+if LightningTrainer.save_checkpoint.__annotations__.get('weights_only') == Optional[bool]:
+    LightningTrainer.save_checkpoint.__annotations__['weights_only'] = bool
 
 import nemo.collections.asr as nemo_asr
 from STFT_Process import STFT_Process
