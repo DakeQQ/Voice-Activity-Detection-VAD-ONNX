@@ -43,7 +43,7 @@ onnx_model_reconstruction = export_folder / "reconstruction.onnx"
 
 OPSET = 20
 INPUT_AUDIO_LENGTH = 48000      # Static ONNX window length in samples.
-IN_AUDIO_DTYPE = "INT16"        # ["F16", "F32", "INT16"]; float inputs use normalized PCM in [-1, 1].
+IN_AUDIO_DTYPE = "F32"          # ["F16", "F32", "INT16"]; float inputs use normalized PCM in [-1, 1].
 
 _INPUT_AUDIO_DTYPES = {
     "F16": (torch.float16, onnx.TensorProto.FLOAT16, "float16"),
