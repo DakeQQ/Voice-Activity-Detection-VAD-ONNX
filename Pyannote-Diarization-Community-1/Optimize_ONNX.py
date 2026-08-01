@@ -123,15 +123,104 @@ def publish_metadata_carrier(source_dir: Path, output_dir: Path) -> Path:
 
 def convert_model_to_fp16(path: Path) -> None:
     model = onnx.load(path, load_external_data=True)
+    fp32_scopes = ("/plda/", "/aggregator/")
+    fp32_frontend_nodes = {
+        "embedding_/Conv",
+        "embedding_/Mul",
+        "embedding_/Split",
+        "embedding_/Add",
+        "embedding_/Conv_1",
+        "embedding_/Clip",
+        "embedding_/Log",
+        "embedding_/ReduceMean",
+        "embedding_/Sub",
+    }
     node_block_list = [
-        node.name for node in model.graph.node if "/plda/" in node.name
+        node.name
+        for node in model.graph.node
+        if node.name in fp32_frontend_nodes
+        or any(scope in node.name for scope in fp32_scopes)
     ]
+    blocked_initializer_names = {
+        input_name
+        for node in model.graph.node
+        if node.name in node_block_list
+        for input_name in node.input
+    }
+    blocked_initializers = {}
+    for initializer in model.graph.initializer:
+        if (
+            initializer.data_type != onnx.TensorProto.FLOAT
+            or initializer.name not in blocked_initializer_names
+        ):
+            continue
+        clone = onnx.TensorProto()
+        clone.CopyFrom(initializer)
+        blocked_initializers[initializer.name] = clone
+    blocked_constants = {}
+    for node in model.graph.node:
+        if node.op_type != "Constant" or node.name not in node_block_list:
+            continue
+        attributes = []
+        for attribute in node.attribute:
+            clone = onnx.AttributeProto()
+            clone.CopyFrom(attribute)
+            attributes.append(clone)
+        blocked_constants[node.name] = attributes
     model, _ = convert_graph_to_fp16(
         model,
         force_fp16_initializers=True,
         op_block_list=FP16_OP_BLOCK_LIST,
         node_block_list=node_block_list,
     )
+    blocked_node_names = set(node_block_list)
+    initializer_by_name = {
+        initializer.name: initializer for initializer in model.graph.initializer
+    }
+    for initializer in list(model.graph.initializer):
+        original = blocked_initializers.get(initializer.name)
+        if original is None:
+            continue
+        consumers = [
+            (node, index)
+            for node in model.graph.node
+            for index, input_name in enumerate(node.input)
+            if input_name == initializer.name
+        ]
+        safe_consumers = [
+            (node, index)
+            for node, index in consumers
+            if node.name in blocked_node_names
+            or (
+                node.op_type == "Cast"
+                and any(
+                    attribute.name == "to"
+                    and onnx.helper.get_attribute_value(attribute)
+                    == onnx.TensorProto.FLOAT
+                    for attribute in node.attribute
+                )
+            )
+        ]
+        if len(safe_consumers) == len(consumers):
+            initializer.CopyFrom(original)
+            continue
+        alias = f"{initializer.name}_fp32_blocked"
+        suffix = 1
+        while alias in initializer_by_name:
+            alias = f"{initializer.name}_fp32_blocked_{suffix}"
+            suffix += 1
+        clone = onnx.TensorProto()
+        clone.CopyFrom(original)
+        clone.name = alias
+        model.graph.initializer.append(clone)
+        initializer_by_name[alias] = clone
+        for node, index in safe_consumers:
+            node.input[index] = alias
+    for node in model.graph.node:
+        attributes = blocked_constants.get(node.name)
+        if attributes is not None:
+            del node.attribute[:]
+            node.attribute.extend(attributes)
     onnx.save(model, path, save_as_external_data=False)
 
 

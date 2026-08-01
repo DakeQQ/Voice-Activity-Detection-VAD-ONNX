@@ -24,7 +24,7 @@ from vad_onnx_metadata import (
 
 
 script_dir = Path(__file__).resolve().parent
-ONNX_MODEL_DIR = script_dir / "Pyannote_Community1_Optimized"
+ONNX_MODEL_DIR = script_dir / "Pyannote_Community1_Optimized_F16"
 TEST_AUDIO = Path(model_audio_path("pyannote_community1"))
 
 # ONNX Runtime settings. An empty provider list explicitly selects CPU.
@@ -32,7 +32,7 @@ ORT_ACCELERATE_PROVIDERS = []
 ORT_LOG = False
 MAX_THREADS = 0
 DEVICE_ID = 0
-DISABLE_CPU_EP_FALLBACK = True
+DISABLE_CPU_EP_FALLBACK = False  # Dynamic shape/control nodes require CPU EP.
 CPU_DISABLE_MATMUL_ADD_FUSION = True
 CPU_DISABLE_NCHWC = True
 CPU_EXTRA_DISABLED_OPTIMIZERS = [
