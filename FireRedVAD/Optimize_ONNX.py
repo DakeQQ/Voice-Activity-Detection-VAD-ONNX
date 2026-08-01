@@ -44,6 +44,7 @@ MODEL_FOLDER = Path(__file__).resolve().parent / "FireRedVAD_ONNX"
 OPTIMIZED_FOLDER = Path(__file__).resolve().parent / "FireRedVAD_Optimized"
 
 ENABLE_FP16 = False  # Convert internal float compute to FP16; preserve public I/O types.
+FP32_FRONTEND_INITIALIZER_COUNT = 3
 
 # (maximum absolute error, maximum mean absolute error, minimum cosine similarity)
 FP16_OUTPUT_LIMITS = {
@@ -154,6 +155,112 @@ EXPECTED_FINAL_INITIALIZER_TYPES = {
 }
 EXPECTED_FP16_CASTS = {"offline": 2, "stream_vad": 4}
 EXPECTED_RESIDUAL_PAIRS = {"offline": 7, "stream_vad": 8}
+
+
+def fp32_frontend_initializer_names(model):
+    nodes = {node.name: node for node in model.graph.node}
+    try:
+        names = {
+            nodes["/frontend/Conv"].input[1],
+            nodes["/frontend/Conv_1"].input[1],
+            nodes["/frontend/Clip"].input[1],
+        }
+    except (KeyError, IndexError) as error:
+        raise ValueError("Cannot resolve guarded frontend initializers") from error
+    if "" in names or len(names) != FP32_FRONTEND_INITIALIZER_COUNT:
+        raise ValueError(f"Unexpected guarded frontend initializers: {sorted(names)}")
+    return names
+
+
+def snapshot_fp32_frontend_initializers(model):
+    initializers = {item.name: item for item in model.graph.initializer}
+    constant_tensors = {
+        output: helper.get_attribute_value(attribute)
+        for node in model.graph.node
+        if node.domain in ("", "ai.onnx") and node.op_type == "Constant"
+        for output in node.output
+        for attribute in node.attribute
+        if attribute.name == "value"
+    }
+    snapshot = {}
+    for name in fp32_frontend_initializer_names(model):
+        initializer = initializers.get(name, constant_tensors.get(name))
+        if (
+            initializer is None
+            or not isinstance(initializer, onnx.TensorProto)
+            or initializer.data_type != TensorProto.FLOAT
+        ):
+            raise ValueError(f"Expected source FP32 frontend initializer {name!r}")
+        snapshot[name] = onnx.TensorProto()
+        snapshot[name].CopyFrom(initializer)
+        snapshot[name].name = name
+    return snapshot
+
+
+def promote_frontend_to_fp32(model, source_initializers):
+    nodes = {node.name: node for node in model.graph.node}
+    frontend_conv = nodes.get("/frontend/Conv")
+    frontend_log = nodes.get("/frontend/Log")
+    if frontend_conv is None or frontend_log is None:
+        raise ValueError("Converted graph is missing the frontend precision boundary")
+
+    initializers = {item.name: item for item in model.graph.initializer}
+    guarded_names = fp32_frontend_initializer_names(model)
+    if guarded_names != set(source_initializers):
+        raise ValueError("Converted frontend initializer names changed")
+    for name in guarded_names:
+        initializer = initializers.get(name)
+        if initializer is None or initializer.data_type != TensorProto.FLOAT16:
+            raise ValueError(f"Expected FP16 frontend initializer {name!r}")
+        source_initializer = source_initializers.get(name)
+        if source_initializer is None or source_initializer.data_type != TensorProto.FLOAT:
+            raise ValueError(f"Missing source FP32 frontend initializer {name!r}")
+        initializer.CopyFrom(source_initializer)
+
+    input_casts = [
+        node for node in model.graph.node
+        if node.op_type == "Cast"
+        and list(node.input) == ["audio"]
+        and list(node.output) == [frontend_conv.input[0]]
+    ]
+    if len(input_casts) != 1:
+        raise ValueError(f"Expected one frontend input Cast, got {len(input_casts)}")
+    frontend_conv.input[0] = "audio"
+    input_cast_name = input_casts[0].name
+    for index in range(len(model.graph.node) - 1, -1, -1):
+        if model.graph.node[index].name == input_cast_name:
+            del model.graph.node[index]
+            break
+
+    log_output = frontend_log.output[0]
+    fp16_output = f"{log_output}_fp16"
+    frontend_log.output[0] = fp16_output
+    log_index = next(
+        index for index, node in enumerate(model.graph.node)
+        if node.name == "/frontend/Log"
+    )
+    model.graph.node.insert(
+        log_index + 1,
+        helper.make_node(
+            "Cast",
+            [fp16_output],
+            [log_output],
+            name="/frontend/CastToFP16",
+            to=TensorProto.FLOAT16,
+        ),
+    )
+
+    fp32_frontend_outputs = {
+        output
+        for node in model.graph.node
+        if node.name.startswith("/frontend/")
+        and node.name != "/frontend/CastToFP16"
+        for output in node.output
+        if output
+    }
+    for value in model.graph.value_info:
+        if value.name in fp32_frontend_outputs:
+            value.type.tensor_type.elem_type = TensorProto.FLOAT
 
 
 def attributes(node):
@@ -290,8 +397,22 @@ def validate_rewritten_fp16_graph(model, model_type):
             f"Expected {EXPECTED_INITIALIZERS} FP16 initializers, "
             f"got {len(model.graph.initializer)}"
         )
-    if any(item.data_type != TensorProto.FLOAT16 for item in model.graph.initializer):
-        raise ValueError("Expected every rewritten initializer to be float16")
+    initializer_types = {item.name: item.data_type for item in model.graph.initializer}
+    actual_fp32 = {
+        name for name, data_type in initializer_types.items()
+        if data_type == TensorProto.FLOAT
+    }
+    expected_fp32 = fp32_frontend_initializer_names(model)
+    if actual_fp32 != expected_fp32:
+        raise ValueError(
+            f"Unexpected guarded FP32 initializers: {sorted(actual_fp32)}; "
+            f"expected {sorted(expected_fp32)}"
+        )
+    if any(
+        data_type not in (TensorProto.FLOAT, TensorProto.FLOAT16)
+        for data_type in initializer_types.values()
+    ):
+        raise ValueError("Expected every rewritten initializer to be floating point")
     onnx.checker.check_model(model, check_custom_domain=False)
 
 
@@ -320,8 +441,10 @@ def validate_final_graph(model, model_type, use_fp16=False):
         raise ValueError(f"Unexpected slimmed opset imports: {sorted(opsets)}")
     expected_initializer_types = EXPECTED_FINAL_INITIALIZER_TYPES[profile].copy()
     if use_fp16:
+        float_count = expected_initializer_types.pop(TensorProto.FLOAT)
+        expected_initializer_types[TensorProto.FLOAT] = FP32_FRONTEND_INITIALIZER_COUNT
         expected_initializer_types[TensorProto.FLOAT16] = (
-            expected_initializer_types.pop(TensorProto.FLOAT)
+            float_count - FP32_FRONTEND_INITIALIZER_COUNT
         )
     initializer_types = Counter(
         item.data_type for item in model.graph.initializer
@@ -879,10 +1002,12 @@ def optimize_graph(
     ) = rewrite_graph(model, model_type)
     validate_rewritten_graph(model, model_type)
     if use_fp16:
+        fp32_frontend_initializers = snapshot_fp32_frontend_initializers(model)
         model, _ = convert_graph_to_fp16(
             model,
             force_fp16_initializers=True,
         )
+        promote_frontend_to_fp32(model, fp32_frontend_initializers)
         validate_rewritten_fp16_graph(model, model_type)
 
     staged_model, validated_cases, metrics = publish_model(
@@ -1025,10 +1150,14 @@ def optimize_exported_models(
                 validate_rewritten_graph(model, model_type)
             convert_to_fp16 = use_fp16 and not source_is_fp16
             if convert_to_fp16:
+                fp32_frontend_initializers = snapshot_fp32_frontend_initializers(
+                    model
+                )
                 model, _ = convert_graph_to_fp16(
                     model,
                     force_fp16_initializers=True,
                 )
+                promote_frontend_to_fp32(model, fp32_frontend_initializers)
             final_is_fp16 = source_is_fp16 or convert_to_fp16
             pre_slim_node_count = len(model.graph.node)
             pre_slim_initializer_count = len(model.graph.initializer)
