@@ -24,7 +24,7 @@ from vad_onnx_metadata import (
 
 
 script_dir = Path(__file__).resolve().parent
-ONNX_MODEL_DIR = script_dir / "Pyannote_Community1_Optimized_F16"
+ONNX_MODEL_DIR = script_dir / "Pyannote_Community1_Optimized"
 TEST_AUDIO = Path(model_audio_path("pyannote_community1"))
 
 # ONNX Runtime settings. An empty provider list explicitly selects CPU.
