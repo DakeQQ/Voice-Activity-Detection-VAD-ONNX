@@ -158,9 +158,7 @@ def read_onnx_metadata(model_path):
 
 def write_onnx_metadata(model_path, metadata):
     model = onnx.load(str(model_path), load_external_data=False)
-    combined = {prop.key: prop.value for prop in model.metadata_props}
-    combined.update(build_model_metadata(metadata))
-    metadata = static_model_metadata(combined)
+    metadata = static_model_metadata(metadata)
     del model.metadata_props[:]
     for key, value in metadata.items():
         model.metadata_props.add(key=key, value=value)
@@ -169,26 +167,53 @@ def write_onnx_metadata(model_path, metadata):
     gc.collect()
 
 
+def clear_onnx_metadata(model_path):
+    model = onnx.load(str(model_path), load_external_data=False)
+    if model.metadata_props:
+        del model.metadata_props[:]
+        onnx.save(model, str(model_path))
+    del model
+    gc.collect()
+
+
 def export_metadata_carrier(metadata_path, metadata, opset):
-    import torch
-
-    class MetadataCarrier(torch.nn.Module):
-        def forward(self, marker):
-            return marker
-
     metadata = static_model_metadata(metadata)
     metadata_path = Path(metadata_path)
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.onnx.export(
-        MetadataCarrier(),
-        torch.zeros((1,), dtype=torch.int64),
-        str(metadata_path),
-        input_names=["marker"],
-        output_names=["marker_out"],
-        opset_version=int(opset),
-        do_constant_folding=True,
-        dynamo=False,
+    static_value = onnx.helper.make_tensor(
+        name="static_metadata_value",
+        data_type=onnx.TensorProto.INT64,
+        dims=(1,),
+        vals=(0,),
     )
+    graph = onnx.helper.make_graph(
+        nodes=[
+            onnx.helper.make_node(
+                "Constant",
+                inputs=[],
+                outputs=["static_metadata"],
+                value=static_value,
+            )
+        ],
+        name="vad_metadata",
+        inputs=[],
+        outputs=[
+            onnx.helper.make_tensor_value_info(
+                "static_metadata",
+                onnx.TensorProto.INT64,
+                (1,),
+            )
+        ],
+    )
+    model = onnx.helper.make_model(
+        graph,
+        producer_name="vad_onnx_metadata",
+        opset_imports=[onnx.helper.make_opsetid("", int(opset))],
+    )
+    onnx.checker.check_model(model)
+    onnx.save(model, str(metadata_path))
+    del model
+    gc.collect()
     write_onnx_metadata(metadata_path, metadata)
 
 
@@ -218,17 +243,16 @@ def stamp_export_metadata(model_path, metadata, opset):
     metadata = static_model_metadata(metadata)
     metadata_path = metadata_path_for_model(model_path)
     export_metadata_carrier(metadata_path, metadata, opset)
-    write_onnx_metadata(model_path, metadata)
+    clear_onnx_metadata(model_path)
     return metadata_path
 
 
 def read_source_metadata(main_model_path):
     main_model_path = Path(main_model_path)
-    metadata = read_onnx_metadata(main_model_path) if main_model_path.exists() else {}
     metadata_path = metadata_path_for_model(main_model_path)
-    if not metadata and metadata_path.exists():
-        metadata = read_onnx_metadata(metadata_path)
-    return metadata
+    if metadata_path.exists():
+        return read_onnx_metadata(metadata_path)
+    return read_onnx_metadata(main_model_path) if main_model_path.exists() else {}
 
 
 def copy_metadata_model(src_main_model_path, dst_main_model_path):
@@ -257,8 +281,8 @@ def copy_metadata_model(src_main_model_path, dst_main_model_path):
 
 
 def preserve_optimized_metadata(src_main_model_path, dst_main_model_path, metadata):
+    clear_onnx_metadata(dst_main_model_path)
     if metadata:
-        write_onnx_metadata(dst_main_model_path, metadata)
         if not copy_metadata_model(src_main_model_path, dst_main_model_path):
             dst_model = onnx.load(str(dst_main_model_path), load_external_data=False)
             opset = next(
