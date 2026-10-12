@@ -205,11 +205,14 @@ def export_metadata_carrier(metadata_path, metadata, opset):
             )
         ],
     )
+    opset_imports = [onnx.helper.make_opsetid("", int(opset))]
     model = onnx.helper.make_model(
         graph,
         producer_name="vad_onnx_metadata",
-        opset_imports=[onnx.helper.make_opsetid("", int(opset))],
+        opset_imports=opset_imports,
     )
+    # Default IR follows the onnx package and can exceed what onnxruntime loads.
+    model.ir_version = onnx.helper.find_min_ir_version_for(opset_imports)
     onnx.checker.check_model(model)
     onnx.save(model, str(metadata_path))
     del model
